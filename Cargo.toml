@@ -1,0 +1,9 @@
+[package]
+name = "bleps"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bjoern Quentin <bjoern.quentin@mobile-j.d>"]
+
+[dependencies]
+log = "0.4.16"
+embedded-io = "0.3.0"
