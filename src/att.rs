@@ -16,7 +16,7 @@ const ATT_EXCHANGE_MTU_RESPONSE_OPCODE: u8 = 0x03;
 pub const ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE: u8 = 0x06;
 //const ATT_FIND_BY_TYPE_VALUE_RESPONSE_OPCODE: u8 = 0x07;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Uuid {
     Uuid16(u16),
     Uuid128([u8; 16]),
@@ -37,6 +37,13 @@ impl Uuid {
             }
         }
         data
+    }
+
+    pub fn bytes(&self, data: &mut [u8]) {
+        match self {
+            Uuid::Uuid16(uuid) => data.copy_from_slice(&uuid.to_be_bytes()),
+            Uuid::Uuid128(uuid) => data.copy_from_slice(uuid),
+        }
     }
 }
 

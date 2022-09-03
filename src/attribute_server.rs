@@ -15,8 +15,9 @@ use crate::{
     Ble, Data,
 };
 
-const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
-const CHARACTERISTIC_UUID16: Uuid = Uuid::Uuid16(0x2803);
+pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
+pub const CHARACTERISTIC_UUID16: Uuid = Uuid::Uuid16(0x2803);
+pub const GENERIC_ATTRIBUTE_UUID16: Uuid = Uuid::Uuid16(0x1801);
 
 #[derive(Debug)]
 pub enum WorkResult {
@@ -44,19 +45,25 @@ impl From<AttParseError> for AttributeServerError {
 
 pub struct AttributeServer<'a> {
     ble: &'a mut Ble<'a>,
-    services: &'a mut [Service<'a>],
+    attributes: &'a mut [Attribute<'a>],
 }
 
 impl<'a> AttributeServer<'a> {
-    pub fn new(ble: &'a mut Ble<'a>, services: &'a mut [Service<'a>]) -> AttributeServer<'a> {
-        let mut current_handle = 1;
-        for service in services.iter_mut() {
-            service.start_handle = current_handle;
-            service.end_handle = current_handle + 2;
-            service.characteristics_handle = current_handle + 2;
-            current_handle += 3;
+    pub fn new(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a> {
+        for (i, attr) in attributes.iter_mut().enumerate() {
+            attr.handle = i as u16 + 1;
         }
-        AttributeServer { ble, services }
+
+        let mut last_in_group = attributes.last().unwrap().handle;
+        for i in (0..attributes.len()).rev() {
+            attributes[i].last_handle_in_group = last_in_group;
+
+            if attributes[i].uuid == Uuid::Uuid16(0x2800) && i > 0 {
+                last_in_group = attributes[i - 1].handle;
+            }
+        }
+
+        AttributeServer { ble, attributes }
     }
 
     pub fn do_work(&mut self) -> Result<WorkResult, AttributeServerError> {
@@ -143,26 +150,23 @@ impl<'a> AttributeServer<'a> {
         end: u16,
         group_type: Uuid,
     ) {
-        log::info!("services = {:?}", self.services);
+        log::info!("attributes = {:?}", self.attributes);
 
-        if group_type == PRIMARY_SERVICE_UUID16 {
-            log::info!("Searching for primary service UUIDs");
-            // TODO respond with all finds - not just one
-            for service in self.services.iter() {
-                log::info!("Check service");
-                if service.start_handle >= start && service.end_handle <= end {
-                    let attribute_list = [AttributeData::new(
-                        service.start_handle,
-                        service.end_handle,
-                        group_type,
-                    )];
-                    log::info!("found!");
-                    self.write_att(
-                        src_handle,
-                        att_encode_read_by_group_type_response(&attribute_list),
-                    );
-                    return;
-                }
+        // TODO respond with all finds - not just one
+        for att in self.attributes.iter() {
+            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            if att.uuid == group_type && att.handle >= start && att.handle <= end {
+                let attribute_list = [AttributeData::new(
+                    att.handle,
+                    att.last_handle_in_group,
+                    group_type,
+                )];
+                log::info!("found! {:x?}", attribute_list);
+                self.write_att(
+                    src_handle,
+                    att_encode_read_by_group_type_response(&attribute_list),
+                );
+                return;
             }
         }
 
@@ -186,36 +190,35 @@ impl<'a> AttributeServer<'a> {
         end: u16,
         attribute_type: Uuid,
     ) {
-        if attribute_type == CHARACTERISTIC_UUID16 {
-            log::info!("Searching for characteristic");
-            // TODO respond with all finds - not just one
-            for service in self.services.iter() {
-                //log::info!("Check service");
-                if service.start_handle >= start && service.end_handle <= end {
-                    log::info!("Found");
-                    let mut data = Data::new(&[
-                        service.permissions,
-                        // 2 byte handle pointing to characteristic value
-                        (service.characteristics_handle & 0xff) as u8,
-                        ((service.characteristics_handle & 0xff00) >> 8) as u8,
-                        // UUID of characteristic value
-                    ]);
-                    data.append((&service.uuid).encode().to_slice());
+        // TODO respond with all finds - not just one
+        for att in self.attributes.iter_mut() {
+            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
+                let data = match att.data {
+                    AttData::Static(bytes) => Data::new(bytes),
+                    AttData::Dynamic {
+                        ref mut read_function,
+                        ..
+                    } => {
+                        if let Some(rf) = read_function {
+                            (&mut *rf)()
+                        } else {
+                            Data::new(&[])
+                        }
+                    }
+                };
 
-                    let attribute_list =
-                        [AttributePayloadData::new(service.start_handle + 1, data)];
-                    self.write_att(
-                        src_handle,
-                        att_encode_read_by_type_response(&attribute_list),
-                    );
-
-                    return;
-                }
+                let attribute_list = [AttributePayloadData::new(att.handle, data)];
+                log::info!("found! {:x?}", attribute_list);
+                self.write_att(
+                    src_handle,
+                    att_encode_read_by_type_response(&attribute_list),
+                );
+                return;
             }
         }
 
         log::info!("not found");
-
         // respond with error
         self.write_att(
             src_handle,
@@ -229,9 +232,21 @@ impl<'a> AttributeServer<'a> {
 
     fn handle_read_req(&mut self, src_handle: u16, handle: u16) {
         let mut answer = None;
-        for service in self.services.iter_mut() {
-            if service.characteristics_handle == handle {
-                answer = Some((*service.read_function)());
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                answer = match att.data {
+                    AttData::Static(bytes) => Some(Data::new(bytes)),
+                    AttData::Dynamic {
+                        ref mut read_function,
+                        ..
+                    } => {
+                        if let Some(rf) = read_function {
+                            Some((&mut *rf)())
+                        } else {
+                            None
+                        }
+                    }
+                };
                 break;
             }
         }
@@ -246,9 +261,20 @@ impl<'a> AttributeServer<'a> {
 
     fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
         let mut found = false;
-        for service in self.services.iter_mut() {
-            if service.characteristics_handle == handle {
-                (*service.write_function)(data);
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                match att.data {
+                    AttData::Static(_bytes) => (),
+                    AttData::Dynamic {
+                        ref mut write_function,
+                        ..
+                    } => {
+                        if let Some(wf) = write_function {
+                            (&mut *wf)(data);
+                        }
+                    }
+                };
+
                 found = true;
                 break;
             }
@@ -310,43 +336,45 @@ impl<'a> AttributeServer<'a> {
 pub const ATT_READABLE: u8 = 0x02;
 pub const ATT_WRITEABLE: u8 = 0x08;
 
-pub struct Service<'a> {
-    pub uuid: Uuid,
-    pub permissions: u8,
-    pub read_function: &'a mut dyn FnMut() -> Data,
-    pub write_function: &'a mut dyn FnMut(Data),
-    start_handle: u16,
-    end_handle: u16,
-    characteristics_handle: u16,
+pub enum AttData<'a> {
+    Static(&'a [u8]),
+    Dynamic {
+        read_function: Option<&'a mut dyn FnMut() -> Data>,
+        write_function: Option<&'a mut dyn FnMut(Data)>,
+    },
 }
 
-impl<'a> Service<'a> {
-    pub fn new(
-        uuid: Uuid,
-        permissions: u8,
-        read_function: &'a mut dyn FnMut() -> Data,
-        write_function: &'a mut dyn FnMut(Data),
-    ) -> Service<'a> {
-        Service {
-            uuid,
-            permissions,
-            read_function,
-            write_function,
-            start_handle: 0,
-            end_handle: 0,
-            characteristics_handle: 0,
+impl<'a> core::fmt::Debug for AttData<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Static(arg0) => f.debug_tuple("Static").field(arg0).finish(),
+            Self::Dynamic {
+                read_function,
+                write_function,
+            } => f
+                .debug_struct("Dynamic")
+                .field("read_function", &read_function.is_some())
+                .field("write_function", &write_function.is_some())
+                .finish(),
         }
     }
 }
 
-impl<'a> core::fmt::Debug for Service<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Service")
-            .field("uuid", &self.uuid)
-            .field("permissions", &self.permissions)
-            .field("start_handle", &self.start_handle)
-            .field("end_handle", &self.end_handle)
-            .field("characteristics_handle", &self.characteristics_handle)
-            .finish()
+#[derive(Debug)]
+pub struct Attribute<'a> {
+    pub uuid: Uuid,
+    pub handle: u16,
+    pub data: &'a mut AttData<'a>,
+    pub last_handle_in_group: u16,
+}
+
+impl<'a> Attribute<'a> {
+    pub fn new(uuid: Uuid, data: &'a mut AttData<'a>) -> Attribute<'a> {
+        Attribute {
+            uuid,
+            handle: 0,
+            data,
+            last_handle_in_group: 0,
+        }
     }
 }

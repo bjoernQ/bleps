@@ -15,7 +15,10 @@ use bleps::{
         parse_att, Att, AttErrorCode, AttributeData, AttributePayloadData, Uuid,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
     },
-    attribute_server::{AttributeServer, Service, ATT_READABLE, ATT_WRITEABLE},
+    attribute_server::{
+        AttData, Attribute, AttributeServer, ATT_READABLE, ATT_WRITEABLE, CHARACTERISTIC_UUID16,
+        GENERIC_ATTRIBUTE_UUID16, PRIMARY_SERVICE_UUID16,
+    },
     command::{create_command_data, Command, CommandHeader},
     event::{ErrorCode, EventType},
     l2cap::{encode_l2cap, parse_l2cap},
@@ -586,157 +589,97 @@ fn create_advertising_data_works() {
 }
 
 #[test]
-fn attribute_server_replies_to_group_type_requests() {
-    let mut written = Vec::<u8>::new();
-
-    let connector = connector();
-    let mut ble = Ble::new(&connector);
-
-    let mut rf = || Data::new(&[b'H', b'e', b'l', b'l', b'o']);
-    let mut wf = |data: Data| {
-        written.extend_from_slice(data.to_slice());
-    };
-
-    let srv = Service::new(
-        Uuid::Uuid128([
-            0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
-            0x6A, 0xA8,
-        ]),
-        ATT_READABLE | ATT_WRITEABLE,
-        &mut rf,
-        &mut wf,
-    );
-
-    let services = &mut [srv];
-    let mut srv = AttributeServer::new(&mut ble, services);
-
-    // ReadByGroupTypeReq { start: 1, end: ffff, group_type: Uuid16(2800) }
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x0b, 0x00, 0x07, 0x00, 0x04, 0x00, 0x10, 0x01, 0x00, 0xff, 0xff, 0x00,
-        0x28,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (1-3, 0x2800)
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[
-            0x02, 0x00, 0x20, 0x0c, 0x00, 0x08, 0x00, 0x04, 0x00, 0x11, 0x06, 0x01, 0x00, 0x03,
-            0x00, 0x00, 0x28
-        ]
-    );
-
-    // ReadByGroupTypeReq { start: 3, end: ffff, group_type: Uuid16(2800) }
-    connector.reset();
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x0b, 0x00, 0x07, 0x00, 0x04, 0x00, 0x10, 0x03, 0x00, 0xff, 0xff, 0x00,
-        0x28,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (not found)
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[0x02, 0x00, 0x20, 0x09, 0x00, 0x05, 0x00, 0x04, 0x00, 0x01, 0x10, 0x03, 0x00, 0x0a]
-    );
-
-    // ReadByTypeReq { start: 1, end: 3, attribute_type: Uuid16(2802) }
-    connector.reset();
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x0b, 0x00, 0x07, 0x00, 0x04, 0x00, 0x08, 0x01, 0x00, 0x02, 0x00, 0x02,
-        0x28,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (not found)
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[0x02, 0x00, 0x20, 0x09, 0x00, 0x05, 0x00, 0x04, 0x00, 0x01, 0x08, 0x01, 0x00, 0x0a]
-    );
-
-    // ReadByTypeReq { start: 1, end: 3, attribute_type: Uuid16(2803) }
-    connector.reset();
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x0b, 0x00, 0x07, 0x00, 0x04, 0x00, 0x08, 0x01, 0x00, 0x03, 0x00, 0x03,
-        0x28,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (not found)
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[
-            0x02, 0x00, 0x20, 0x1b, 0x00, 0x17, 0x0, 0x4, 0x0, 0x9, 0x15, 0x2, 0x0, 0xa, 0x3, 0x0,
-            0xa8, 0x6a, 0x62, 0xf1, 0x5d, 0x26, 0x45, 0x38, 0xb3, 0x64, 0x56, 0x54, 0x96, 0x15,
-            0x15, 0xc9,
-        ]
-    );
-
-    // ReadReq { handle: 3 }
-    connector.reset();
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x07, 0x00, 0x03, 0x00, 0x04, 0x00, 0x0a, 0x03, 0x00,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (read resp 'Hello')
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[
-            0x02, 0x00, 0x20, 0x0a, 0x00, 0x06, 0x00, 0x04, 0x00, 0x0b, 0x48, 0x65, 0x6c, 0x6c,
-            0x6f,
-        ]
-    );
-
-    // WriteReq { handle: 3, data: [0xab] }
-    connector.reset();
-    connector.provide_data_to_read(&[
-        0x02, 0x00, 0x20, 0x08, 0x00, 0x04, 0x00, 0x04, 0x00, 0x12, 0x03, 0x00, 0xab,
-    ]);
-    assert_matches!(srv.do_work(), Ok(_));
-    // check response (write resp)
-    let response_data = connector.get_written_data();
-    assert_eq!(
-        response_data.to_slice(),
-        &[0x02, 0x00, 0x20, 0x05, 0x00, 0x01, 0x00, 0x04, 0x00, 0x13]
-    );
-
-    assert_eq!(&written[..], &[0xab_u8]);
-}
-
-#[test]
 fn attribute_server_discover_two_services() {
     let connector = connector();
     let mut ble = Ble::new(&connector);
 
+    // TODO create a proc macro to make this less annoying
     let mut rf1 = || Data::default();
     let mut wf1 = |_data: Data| {};
-
-    let srv1 = Service::new(
-        Uuid::Uuid128([
-            0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
-            0x6A, 0xA8,
-        ]),
-        ATT_READABLE | ATT_WRITEABLE,
-        &mut rf1,
-        &mut wf1,
-    );
 
     let mut rf2 = || Data::default();
     let mut wf2 = |_data: Data| {};
 
-    let srv2 = Service::new(
+    let srv_uuid: [u8; 16] = [
+        0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
+        0xA8,
+    ];
+    let mut srv_uuid_att_data = AttData::Static(&srv_uuid);
+    let primaray_srv = Attribute::new(PRIMARY_SERVICE_UUID16, &mut srv_uuid_att_data);
+
+    let char_data = [
+        0x02, // 1 byte properties: READ = 0x02
+        0x03, 0x00, // 2 bytes handle = 0x0007
+        0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
+        0xA8, // 128 bit UUID like above
+    ];
+    let mut char_att_data = AttData::Static(&char_data);
+    let char = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data);
+
+    let mut custom_char_att_data = AttData::Dynamic {
+        read_function: Some(&mut rf1),
+        write_function: Some(&mut wf1),
+    };
+    let custom_char_att_data_attr = Attribute::new(
         Uuid::Uuid128([
-            0xC8, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
+            0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
             0x6A, 0xA8,
         ]),
-        ATT_READABLE | ATT_WRITEABLE,
-        &mut rf2,
-        &mut wf2,
+        &mut custom_char_att_data,
     );
 
-    let services = &mut [srv1, srv2];
-    let mut srv = AttributeServer::new(&mut ble, services);
+    let srv_uuid2: [u8; 16] = [
+        0xC8, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
+        0xA8,
+    ];
+    let mut srv_uuid_att_data2 = AttData::Static(&srv_uuid2);
+    let primaray_srv2 = Attribute::new(PRIMARY_SERVICE_UUID16, &mut srv_uuid_att_data2);
+
+    let char_data2 = [
+        0x02 | 0x08, // 1 byte properties: READ = 0x02, WRITE WITH RESPONSE = 0x08
+        0x06,
+        0x00, // 2 bytes handle = 0x0007
+        0xC8,
+        0x15,
+        0x15,
+        0x96,
+        0x54,
+        0x56,
+        0x64,
+        0xB3,
+        0x38,
+        0x45,
+        0x26,
+        0x5D,
+        0xF1,
+        0x62,
+        0x6A,
+        0xA8, // 128 bit UUID like above
+    ];
+    let mut char_att_data2 = AttData::Static(&char_data2);
+    let char2 = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data2);
+
+    let mut custom_char_att_data2 = AttData::Dynamic {
+        read_function: Some(&mut rf2),
+        write_function: Some(&mut wf2),
+    };
+    let custom_char_att_data_attr2 = Attribute::new(
+        Uuid::Uuid128([
+            0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
+            0x6A, 0xA8,
+        ]),
+        &mut custom_char_att_data2,
+    );
+
+    let attributes = &mut [
+        primaray_srv,
+        char,
+        custom_char_att_data_attr,
+        primaray_srv2,
+        char2,
+        custom_char_att_data_attr2,
+    ];
+    let mut srv = AttributeServer::new(&mut ble, attributes);
 
     // ReadByGroupTypeReq { start: 1, end: ffff, group_type: Uuid16(2800) }
     connector.provide_data_to_read(&[
