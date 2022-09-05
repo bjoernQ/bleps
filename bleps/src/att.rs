@@ -31,9 +31,8 @@ impl Uuid {
                 data.append(&[(uuid & 0xff) as u8, ((uuid >> 8) & 0xff) as u8]);
             }
             Uuid::Uuid128(uuid) => {
-                let mut reversed = uuid.clone();
-                reversed.reverse();
-                data.append(&reversed);
+                let bytes = uuid.clone();
+                data.append(&bytes);
             }
         }
         data
@@ -52,9 +51,8 @@ impl From<Data> for Uuid {
         match data.len() {
             2 => Uuid::Uuid16(u16::from_le_bytes(data.to_slice().try_into().unwrap())),
             16 => {
-                let mut uuid_bytes: [u8; 16] = data.to_slice().try_into().unwrap();
-                uuid_bytes.reverse();
-                Uuid::Uuid128(uuid_bytes)
+                let bytes: [u8; 16] = data.to_slice().try_into().unwrap();
+                Uuid::Uuid128(bytes)
             }
             _ => panic!(),
         }

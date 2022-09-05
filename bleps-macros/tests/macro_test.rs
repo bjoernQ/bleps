@@ -16,5 +16,5 @@ fn test() {
         },],
     },]);
 
-    println!("{:?}", gatt_attributes);
+    println!("{:x?}", gatt_attributes);
 }
