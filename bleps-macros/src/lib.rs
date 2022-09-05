@@ -168,7 +168,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             );
             let char_handle = (attribs.len() + 1 + 1) as u16;
             char_data.extend(char_handle.to_le_bytes());
-            let uuid = uuid::Uuid::parse_str(&service.uuid).unwrap();
+            let uuid = uuid::Uuid::parse_str(&characteristic.uuid).unwrap();
             let mut uuid_bytes = uuid.as_bytes().to_vec();
             uuid_bytes.reverse();
             char_data.extend(uuid_bytes.clone());
