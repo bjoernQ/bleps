@@ -135,13 +135,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
     let mut decls: Vec<_> = Vec::new();
     let mut attribs: Vec<_> = Vec::new();
     for (i, service) in services.iter().enumerate() {
-        let uuid = uuid::Uuid::parse_str(&service.uuid).unwrap();
-
-        let mut uuid_bytes = uuid.as_bytes().to_vec();
-        uuid_bytes.reverse();
+        let uuid_bytes = uuid_to_bytes(&service.uuid);
         let uuid_ident = format_ident!("_uuid{}", i);
 
-        decls.push(quote!(let #uuid_ident: [u8;16] = [ #(#uuid_bytes),* ] ;));
+        decls.push(quote!(let #uuid_ident = [ #(#uuid_bytes),* ] ;));
 
         let uuid_data = format_ident!("_uuid_data{}", i);
         decls.push(quote!(let mut #uuid_data = AttData::Static(&#uuid_ident);));
@@ -168,9 +165,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             );
             let char_handle = (attribs.len() + 1 + 1) as u16;
             char_data.extend(char_handle.to_le_bytes());
-            let uuid = uuid::Uuid::parse_str(&characteristic.uuid).unwrap();
-            let mut uuid_bytes = uuid.as_bytes().to_vec();
-            uuid_bytes.reverse();
+            let uuid_bytes = uuid_to_bytes(&characteristic.uuid);
             char_data.extend(uuid_bytes.clone());
             let char_data_ident = format_ident!("_char_data{}{}", i, j);
             decls.push(quote!(let #char_data_ident = [ #(#char_data),* ] ;));
@@ -204,9 +199,15 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             );
 
             let gen_attr_ident = format_ident!("_gen_attr{}{}", i, j);
-            decls.push(
-                quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid128([ #(#uuid_bytes),* ]), &mut #gen_attr_att_data_ident);)
-            );
+            if uuid_bytes.len() == 2 {
+                decls.push(
+                    quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid16( u16::from_le_bytes([ #(#uuid_bytes),* ])), &mut #gen_attr_att_data_ident);)
+                );    
+            } else {
+                decls.push(
+                    quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid128([ #(#uuid_bytes),* ]), &mut #gen_attr_att_data_ident);)
+                );    
+            }
             attribs.push(quote!(#gen_attr_ident));
         }
     }
@@ -232,6 +233,20 @@ fn path_to_string(path: Path) -> String {
         res.push_str(&seg.ident.to_string());
     }
     res
+}
+
+fn uuid_to_bytes(uuid: &str) -> Vec<u8> {
+    if uuid.len() == 4 {
+        let bytes = u16::to_le_bytes(u16::from_str_radix(&uuid, 16).unwrap());
+        let mut res = Vec::new();
+        res.extend(bytes);
+        res
+    } else {
+        let uuid = uuid::Uuid::parse_str(&uuid).unwrap();
+        let mut uuid_bytes = uuid.as_bytes().to_vec();
+        uuid_bytes.reverse();
+        uuid_bytes    
+    }
 }
 
 #[derive(Debug)]
