@@ -44,6 +44,7 @@ pub enum ErrorCode {
     CommandDisallowed = 0x0c,
     RemoteUserTerminatedConnection = 0x13,
     // see Error Codes Description in spec
+    Unknown = 0xff,
 }
 
 impl ErrorCode {
@@ -63,7 +64,7 @@ impl ErrorCode {
             0x0c => ErrorCode::CommandDisallowed,
             0x13 => ErrorCode::RemoteUserTerminatedConnection,
 
-            _ => panic!("Unknown error code {}", value),
+            _ => ErrorCode::Unknown,
         }
     }
 }

@@ -1,0 +1,226 @@
+use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, Expr, Lit, Member, Path};
+
+#[proc_macro]
+pub fn gatt(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as syn::ExprArray);
+
+    let mut services: Vec<Service> = Vec::new();
+
+    for elem in ast.elems {
+        match elem {
+            syn::Expr::Struct(s) => {
+                if path_to_string(s.path) != "service" {
+                    return quote! { compile_error!("Unexpected"); }.into();
+                }
+
+                let mut service = Service {
+                    uuid: String::new(),
+                    characteristics: Vec::new(),
+                };
+
+                for field in s.fields {
+                    let name = if let Member::Named(name) = field.member {
+                        name.to_string()
+                    } else {
+                        return quote! { compile_error!("Unexpected"); }.into();
+                    };
+
+                    match name.as_str() {
+                        "uuid" => {
+                            if let Expr::Lit(value) = field.expr {
+                                if let Lit::Str(s) = value.lit {
+                                    service.uuid = s.value();
+                                } else {
+                                    return quote! { compile_error!("Unexpected"); }.into();
+                                }
+                            } else {
+                                return quote! { compile_error!("Unexpected"); }.into();
+                            }
+                        }
+                        "characteristics" => {
+                            if let Expr::Array(characteristics) = field.expr {
+                                for characteristic in characteristics.elems {
+                                    if let Expr::Struct(s) = characteristic {
+                                        if path_to_string(s.path) != "characteristic" {
+                                            return quote! { compile_error!("Unexpected"); }.into();
+                                        }
+
+                                        let mut charact = Characteristic {
+                                            uuid: String::new(),
+                                            read: None,
+                                            write: None,
+                                        };
+
+                                        for field in s.fields {
+                                            let name = if let Member::Named(name) = field.member {
+                                                name.to_string()
+                                            } else {
+                                                return quote! { compile_error!("Unexpected"); }
+                                                    .into();
+                                            };
+
+                                            match name.as_str() {
+                                                "uuid" => {
+                                                    if let Expr::Lit(value) = field.expr {
+                                                        if let Lit::Str(s) = value.lit {
+                                                            charact.uuid = s.value();
+                                                        } else {
+                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                        }
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "read" => {
+                                                    if let Expr::Path(p) = field.expr {
+                                                        let name = path_to_string(p.path);
+                                                        charact.read = Some(name);
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "write" => {
+                                                    if let Expr::Path(p) = field.expr {
+                                                        let name = path_to_string(p.path);
+                                                        charact.write = Some(name);
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                _ => {
+                                                    return quote! { compile_error!("Unexpected"); }
+                                                        .into()
+                                                }
+                                            }
+                                        }
+
+                                        service.characteristics.push(charact);
+                                    } else {
+                                        return quote! { compile_error!("Unexpected"); }.into();
+                                    }
+                                }
+                            } else {
+                                return quote! { compile_error!("Unexpected"); }.into();
+                            }
+                        }
+                        _ => return quote! { compile_error!("Unexpected"); }.into(),
+                    }
+                }
+
+                services.push(service);
+            }
+            _ => return quote! { compile_error!("Unexpected"); }.into(),
+        };
+    }
+
+    let mut decls: Vec<_> = Vec::new();
+    let mut attribs: Vec<_> = Vec::new();
+    for (i, service) in services.iter().enumerate() {
+        let uuid = uuid::Uuid::parse_str(&service.uuid).unwrap();
+
+        let mut uuid_bytes = uuid.as_bytes().to_vec();
+        uuid_bytes.reverse();
+        let uuid_ident = format_ident!("_uuid{}", i);
+
+        decls.push(quote!(let #uuid_ident: [u8;16] = [ #(#uuid_bytes),* ] ;));
+
+        let uuid_data = format_ident!("_uuid_data{}", i);
+        decls.push(quote!(let mut #uuid_data = AttData::Static(&#uuid_ident);));
+
+        let primary_service_ident = format_ident!("_primary_srv{}", i);
+        decls.push(
+            quote!(let #primary_service_ident = Attribute::new(PRIMARY_SERVICE_UUID16, &mut #uuid_data);)
+        );
+
+        attribs.push(quote!(#primary_service_ident));
+
+        for (j, characteristic) in service.characteristics.iter().enumerate() {
+            let mut char_data: Vec<u8> = Vec::new();
+            char_data.push(
+                if characteristic.read.is_some() {
+                    0x02
+                } else {
+                    0
+                } | if characteristic.write.is_some() {
+                    0x08
+                } else {
+                    0
+                },
+            );
+            let char_handle = (attribs.len() + 1 + 1) as u16;
+            char_data.extend(char_handle.to_le_bytes());
+            let uuid = uuid::Uuid::parse_str(&service.uuid).unwrap();
+            let mut uuid_bytes = uuid.as_bytes().to_vec();
+            uuid_bytes.reverse();
+            char_data.extend(uuid_bytes.clone());
+            let char_data_ident = format_ident!("_char_data{}{}", i, j);
+            decls.push(quote!(let #char_data_ident = [ #(#char_data),* ] ;));
+
+            let char_data_attr = format_ident!("_char_data_attr{}{}", i, j);
+            decls.push(quote!(let mut #char_data_attr = AttData::Static(&#char_data_ident);));
+
+            let char_data_attribute = format_ident!("_char_data_attribute{}{}", i, j);
+            decls.push(
+                quote!(let #char_data_attribute = Attribute::new(CHARACTERISTIC_UUID16, &mut #char_data_attr);)
+            );
+            attribs.push(quote!(#char_data_attribute));
+
+            let gen_attr_att_data_ident = format_ident!("_gen_attr_att_data{}{}", i, j);
+
+            let rfunction = if characteristic.read.is_none() {
+                quote!(None)
+            } else {
+                let fname = format_ident!("{}", characteristic.read.as_ref().unwrap());
+                quote!(Some(&mut #fname))
+            };
+            let wfunction = if characteristic.write.is_none() {
+                quote!(None)
+            } else {
+                let fname = format_ident!("{}", characteristic.write.as_ref().unwrap());
+                quote!(Some(&mut #fname))
+            };
+
+            decls.push(
+                quote!(let mut #gen_attr_att_data_ident = AttData::Dynamic { read_function: #rfunction, write_function: #wfunction};)
+            );
+
+            let gen_attr_ident = format_ident!("_gen_attr{}{}", i, j);
+            decls.push(
+                quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid128([ #(#uuid_bytes),* ]), &mut #gen_attr_att_data_ident);)
+            );
+            attribs.push(quote!(#gen_attr_ident));
+        }
+    }
+
+    let code = quote! {
+        #(#decls)*
+        let mut attributes = [ #(#attribs),* ];
+    };
+
+    println!("{}", code);
+
+    code.into()
+}
+
+fn path_to_string(path: Path) -> String {
+    let mut res = String::new();
+    for seg in path.segments {
+        res.push_str(&seg.ident.to_string());
+    }
+    res
+}
+
+#[derive(Debug)]
+struct Service {
+    uuid: String,
+    characteristics: Vec<Characteristic>,
+}
+
+#[derive(Debug)]
+struct Characteristic {
+    uuid: String,
+    read: Option<String>,
+    write: Option<String>,
+}
