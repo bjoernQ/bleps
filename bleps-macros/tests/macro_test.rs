@@ -1,11 +1,4 @@
-use bleps::Data;
 use bleps_macros::gatt;
-
-use bleps::att::Uuid;
-use bleps::attribute_server::AttData;
-use bleps::attribute_server::Attribute;
-use bleps::attribute_server::CHARACTERISTIC_UUID16;
-use bleps::attribute_server::PRIMARY_SERVICE_UUID16;
 
 #[test]
 fn test() {
@@ -23,6 +16,5 @@ fn test() {
         },],
     },]);
 
-    println!("{:?}", attributes);
-    panic!();
+    println!("{:?}", gatt_attributes);
 }

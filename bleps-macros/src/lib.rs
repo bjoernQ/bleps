@@ -2,6 +2,23 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Expr, Lit, Member, Path};
 
+/// Creates an array named `gatt_attributes` defining the given services
+///
+/// ```no-execute
+/// gatt!([
+/// service {
+///     uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+///     characteristics: [
+///         characteristic {
+///              uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+///              read: my_read_function,
+///              write: my_write_function,
+///         },
+///     ],
+///     },
+/// ]);
+/// ```
+///
 #[proc_macro]
 pub fn gatt(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as syn::ExprArray);
@@ -195,11 +212,16 @@ pub fn gatt(input: TokenStream) -> TokenStream {
     }
 
     let code = quote! {
-        #(#decls)*
-        let mut attributes = [ #(#attribs),* ];
-    };
+        use bleps::Data;
+        use bleps::att::Uuid;
+        use bleps::attribute_server::AttData;
+        use bleps::attribute_server::Attribute;
+        use bleps::attribute_server::CHARACTERISTIC_UUID16;
+        use bleps::attribute_server::PRIMARY_SERVICE_UUID16;
 
-    println!("{}", code);
+        #(#decls)*
+        let mut gatt_attributes = [ #(#attribs),* ];
+    };
 
     code.into()
 }
