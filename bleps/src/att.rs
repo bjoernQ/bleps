@@ -47,6 +47,20 @@ impl Uuid {
     }
 }
 
+impl From<Data> for Uuid {
+    fn from(data: Data) -> Self {
+        match data.len() {
+            2 => Uuid::Uuid16(u16::from_le_bytes(data.to_slice().try_into().unwrap())),
+            16 => {
+                let mut uuid_bytes: [u8; 16] = data.to_slice().try_into().unwrap();
+                uuid_bytes.reverse();
+                Uuid::Uuid128(uuid_bytes)
+            }
+            _ => panic!(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum AttErrorCode {
     /// Attempted to use an `Handle` that isn't valid on this server.

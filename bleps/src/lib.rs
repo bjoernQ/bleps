@@ -74,6 +74,10 @@ impl Data {
     pub fn set(&mut self, index: usize, byte: u8) {
         self.data[index] = byte;
     }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
 }
 
 impl Default for Data {

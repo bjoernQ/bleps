@@ -150,16 +150,14 @@ impl<'a> AttributeServer<'a> {
         end: u16,
         group_type: Uuid,
     ) {
-        log::info!("attributes = {:?}", self.attributes);
-
         // TODO respond with all finds - not just one
-        for att in self.attributes.iter() {
+        for att in self.attributes.iter_mut() {
             log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == group_type && att.handle >= start && att.handle <= end {
                 let attribute_list = [AttributeData::new(
                     att.handle,
                     att.last_handle_in_group,
-                    group_type,
+                    Uuid::from(att.value()),
                 )];
                 log::info!("found! {:x?}", attribute_list);
                 self.write_att(
@@ -375,6 +373,22 @@ impl<'a> Attribute<'a> {
             handle: 0,
             data,
             last_handle_in_group: 0,
+        }
+    }
+
+    fn value(&mut self) -> Data {
+        match self.data {
+            AttData::Static(bytes) => Data::new(bytes),
+            AttData::Dynamic {
+                ref mut read_function,
+                ..
+            } => {
+                if let Some(rf) = read_function {
+                    (&mut *rf)()
+                } else {
+                    Data::new(&[])
+                }
+            }
         }
     }
 }
