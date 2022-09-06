@@ -37,3 +37,24 @@ fn test2() {
 
     println!("{:x?}", gatt_attributes);
 }
+
+#[test]
+fn test3() {
+    let mut my_read_function = || Data::new(b"Hello");
+    let mut my_write_function = |data: Data| {
+        println!("{:?}", data);
+    };
+
+    gatt!([service {
+        uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+        characteristics: [characteristic {
+            uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+            read: my_read_function,
+            write: my_write_function,
+            description: "something",
+        },],
+    },]);
+
+    println!("{:x?}", gatt_attributes);
+    panic!();
+}

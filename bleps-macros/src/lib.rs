@@ -68,6 +68,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                             uuid: String::new(),
                                             read: None,
                                             write: None,
+                                            description: None,
                                         };
 
                                         for field in s.fields {
@@ -102,6 +103,17 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                     if let Expr::Path(p) = field.expr {
                                                         let name = path_to_string(p.path);
                                                         charact.write = Some(name);
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "description" => {
+                                                    if let Expr::Lit(value) = field.expr {
+                                                        if let Lit::Str(s) = value.lit {
+                                                            charact.description = Some(s.value());
+                                                        } else {
+                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                        }
                                                     } else {
                                                         return quote!{ compile_error!("Unexpected"); }.into();
                                                     }
@@ -163,6 +175,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     0
                 },
             );
+
             let char_handle = (attribs.len() + 1 + 1) as u16;
             char_data.extend(char_handle.to_le_bytes());
             let uuid_bytes = uuid_to_bytes(&characteristic.uuid);
@@ -202,13 +215,33 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             if uuid_bytes.len() == 2 {
                 decls.push(
                     quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid16( u16::from_le_bytes([ #(#uuid_bytes),* ])), &mut #gen_attr_att_data_ident);)
-                );    
+                );
             } else {
                 decls.push(
                     quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid128([ #(#uuid_bytes),* ]), &mut #gen_attr_att_data_ident);)
-                );    
+                );
             }
             attribs.push(quote!(#gen_attr_ident));
+
+            if characteristic.description.is_some() {
+                let mut char_user_description_data: Vec<u8> = Vec::new();
+                char_user_description_data
+                    .extend(characteristic.description.as_ref().unwrap().bytes());
+                let char_user_description_data_ident =
+                    format_ident!("_char_user_description_data{}{}", i, j);
+                decls.push(quote!(let #char_user_description_data_ident = [ #(#char_user_description_data),* ] ;));
+
+                let char_user_description_data_attr =
+                    format_ident!("_char_user_description_data_attr{}{}", i, j);
+                decls.push(quote!(let mut #char_user_description_data_attr = AttData::Static(&#char_user_description_data_ident);));
+
+                let char_user_description_data_attribute =
+                    format_ident!("_char_user_description_data_attribute{}{}", i, j);
+                decls.push(
+                    quote!(let #char_user_description_data_attribute = Attribute::new(Uuid::Uuid16(0x2901), &mut #char_user_description_data_attr);)
+                );
+                attribs.push(quote!(#char_user_description_data_attribute));
+            }
         }
     }
 
@@ -245,7 +278,7 @@ fn uuid_to_bytes(uuid: &str) -> Vec<u8> {
         let uuid = uuid::Uuid::parse_str(&uuid).unwrap();
         let mut uuid_bytes = uuid.as_bytes().to_vec();
         uuid_bytes.reverse();
-        uuid_bytes    
+        uuid_bytes
     }
 }
 
@@ -260,4 +293,5 @@ struct Characteristic {
     uuid: String,
     read: Option<String>,
     write: Option<String>,
+    description: Option<String>,
 }

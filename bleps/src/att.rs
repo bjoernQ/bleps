@@ -15,8 +15,10 @@ pub const ATT_EXCHANGE_MTU_REQUEST_OPCODE: u8 = 0x02;
 const ATT_EXCHANGE_MTU_RESPONSE_OPCODE: u8 = 0x03;
 pub const ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE: u8 = 0x06;
 //const ATT_FIND_BY_TYPE_VALUE_RESPONSE_OPCODE: u8 = 0x07;
+pub const ATT_FIND_INFORMATION_REQ_OPCODE: u8 = 0x04;
+const ATT_FIND_INFORMATION_RSP_OPCODE: u8 = 0x05;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Uuid {
     Uuid16(u16),
     Uuid128([u8; 16]),
@@ -42,6 +44,13 @@ impl Uuid {
         match self {
             Uuid::Uuid16(uuid) => data.copy_from_slice(&uuid.to_be_bytes()),
             Uuid::Uuid128(uuid) => data.copy_from_slice(uuid),
+        }
+    }
+
+    pub fn get_type(&self) -> u8 {
+        match self {
+            Uuid::Uuid16(_) => 0x01,
+            Uuid::Uuid128(_) => 0x02,
         }
     }
 }
@@ -124,6 +133,10 @@ pub enum Att {
         end_handle: u16,
         att_type: u16,
         att_value: u16,
+    },
+    FindInformation {
+        start_handle: u16,
+        end_handle: u16,
     },
 }
 
@@ -208,6 +221,15 @@ pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
                 end_handle,
                 att_type,
                 att_value,
+            })
+        }
+        ATT_FIND_INFORMATION_REQ_OPCODE => {
+            let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+            let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
+
+            Ok(Att::FindInformation {
+                start_handle,
+                end_handle,
             })
         }
         _ => Err(AttParseError::UnknownOpcode(opcode, Data::new(payload))),
@@ -338,6 +360,22 @@ pub fn att_encode_exchange_mtu_response(mtu: u16) -> Data {
     let mut data = Data::default();
     data.append(&[ATT_EXCHANGE_MTU_RESPONSE_OPCODE]);
     data.append(&[(mtu & 0xff) as u8, ((mtu >> 8) & 0xff) as u8]);
+
+    data
+}
+
+pub fn att_encode_find_information_response(uuid_type: u8, list: &[Option<(u16, Uuid)>]) -> Data {
+    let mut data = Data::default();
+
+    data.append(&[ATT_FIND_INFORMATION_RSP_OPCODE]);
+    data.append(&[uuid_type]);
+
+    for element in list {
+        let (handle, uuid) = element.unwrap();
+        data.append(&handle.to_le_bytes());
+        let uuid_bytes = uuid.encode();
+        data.append(uuid_bytes.to_slice());
+    }
 
     data
 }

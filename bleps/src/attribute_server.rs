@@ -4,11 +4,11 @@ use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
     att::{
         att_encode_error_response, att_encode_exchange_mtu_response,
-        att_encode_read_by_group_type_response, att_encode_read_by_type_response,
-        att_encode_read_response, att_encode_write_response, parse_att, Att, AttErrorCode,
-        AttParseError, AttributeData, AttributePayloadData, Uuid,
-        ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
-        ATT_READ_BY_TYPE_REQUEST_OPCODE,
+        att_encode_find_information_response, att_encode_read_by_group_type_response,
+        att_encode_read_by_type_response, att_encode_read_response, att_encode_write_response,
+        parse_att, Att, AttErrorCode, AttParseError, AttributeData, AttributePayloadData, Uuid,
+        ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_FIND_INFORMATION_REQ_OPCODE,
+        ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
     },
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
@@ -62,6 +62,8 @@ impl<'a> AttributeServer<'a> {
                 last_in_group = attributes[i - 1].handle;
             }
         }
+
+        log::info!("{:#x?}", &attributes);
 
         AttributeServer { ble, attributes }
     }
@@ -134,6 +136,13 @@ impl<'a> AttributeServer<'a> {
                                 att_type,
                                 att_value,
                             );
+                        }
+
+                        Att::FindInformation {
+                            start_handle,
+                            end_handle,
+                        } => {
+                            self.handle_find_information(src_handle, start_handle, end_handle);
                         }
                     }
 
@@ -328,6 +337,52 @@ impl<'a> AttributeServer<'a> {
         );
         log::info!("writing {:x?}", res.to_slice());
         self.ble.write_bytes(res.to_slice());
+    }
+
+    fn handle_find_information(&mut self, src_handle: u16, start: u16, end: u16) {
+        let mut response_data_type: Option<u8> = None;
+        let mut result_count = 0;
+        let mut result_list: [Option<(u16, Uuid)>; 10] = [None; 10];
+
+        for att in self.attributes.iter_mut() {
+            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            if att.handle >= start && att.handle <= end {
+                if response_data_type.is_none() {
+                    response_data_type = Some(att.uuid.get_type());
+                }
+
+                if att.uuid.get_type() == response_data_type.unwrap() {
+                    result_list[result_count] = Some((att.handle, att.uuid));
+                    result_count += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if result_count > 0 {
+            log::info!("found! {:x?}", &result_list[..result_count]);
+            self.write_att(
+                src_handle,
+                att_encode_find_information_response(
+                    response_data_type.unwrap(),
+                    &result_list[..result_count],
+                ),
+            );
+            return;
+        }
+
+        log::info!("not found");
+
+        // respond with error
+        self.write_att(
+            src_handle,
+            att_encode_error_response(
+                ATT_FIND_INFORMATION_REQ_OPCODE,
+                start,
+                AttErrorCode::AttributeNotFound,
+            ),
+        );
     }
 }
 
