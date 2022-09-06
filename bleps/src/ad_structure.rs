@@ -63,7 +63,12 @@ impl<'a> AdStructure<'a> {
                     data.append(uuid.encode().to_slice());
                 }
             }
-            AdStructure::ServiceUuids128(_) => todo!(),
+            AdStructure::ServiceUuids128(uuids) => {
+                data.append(&[(uuids.len() * 16 + 1) as u8, 0x07]);
+                for uuid in uuids.iter() {
+                    data.append(uuid.encode().to_slice());
+                }
+            },
             AdStructure::ServiceData16 { uuid, data } => todo!(
                 "Unimplemented AdStructure::ServiceData16 {:?} {:?}",
                 uuid,
