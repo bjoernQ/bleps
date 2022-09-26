@@ -9,6 +9,7 @@ use crate::{
         parse_att, Att, AttErrorCode, AttParseError, AttributeData, AttributePayloadData, Uuid,
         ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_FIND_INFORMATION_REQ_OPCODE,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
+        ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
@@ -63,7 +64,7 @@ impl<'a> AttributeServer<'a> {
             }
         }
 
-        log::info!("{:#x?}", &attributes);
+        log::trace!("{:#x?}", &attributes);
 
         AttributeServer { ble, attributes }
     }
@@ -263,7 +264,15 @@ impl<'a> AttributeServer<'a> {
             return;
         }
 
-        panic!("should create a reasonable error instead of panic");
+        // respond with error
+        self.write_att(
+            src_handle,
+            att_encode_error_response(
+                ATT_READ_REQUEST_OPCODE,
+                handle,
+                AttErrorCode::AttributeNotFound,
+            ),
+        );
     }
 
     fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
@@ -292,7 +301,15 @@ impl<'a> AttributeServer<'a> {
             return;
         }
 
-        panic!("should create a reasonable error instead of panic");
+        // respond with error
+        self.write_att(
+            src_handle,
+            att_encode_error_response(
+                ATT_WRITE_REQUEST_OPCODE,
+                handle,
+                AttErrorCode::AttributeNotFound,
+            ),
+        );
     }
 
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
