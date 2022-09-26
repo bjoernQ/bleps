@@ -3,6 +3,18 @@ name = "bleps"
 version = "0.1.0"
 edition = "2021"
 authors = ["Bjoern Quentin <bjoern.quentin@mobile-j.d>"]
+description  = "HCI BLE peripheral stack"
+repository   = "https://github.com/bjoernQ/bleps"
+license      = "MIT OR Apache-2.0"
+
+keywords = [
+    "no-std",
+]
+categories = [
+    "embedded",
+    "hardware-support",
+    "no-std",
+]
 
 [dependencies]
 log = "0.4.16"

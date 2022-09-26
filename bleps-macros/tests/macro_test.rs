@@ -56,5 +56,4 @@ fn test3() {
     },]);
 
     println!("{:x?}", gatt_attributes);
-    panic!();
 }

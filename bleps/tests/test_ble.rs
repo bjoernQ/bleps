@@ -16,8 +16,7 @@ use bleps::{
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
     },
     attribute_server::{
-        AttData, Attribute, AttributeServer, ATT_READABLE, ATT_WRITEABLE, CHARACTERISTIC_UUID16,
-        GENERIC_ATTRIBUTE_UUID16, PRIMARY_SERVICE_UUID16,
+        AttData, Attribute, AttributeServer, CHARACTERISTIC_UUID16, PRIMARY_SERVICE_UUID16,
     },
     command::{create_command_data, Command, CommandHeader},
     event::{ErrorCode, EventType},
