@@ -5,12 +5,14 @@ use crate::{
     att::{
         att_encode_error_response, att_encode_exchange_mtu_response,
         att_encode_execute_write_response, att_encode_find_information_response,
-        att_encode_prepare_write_response, att_encode_read_by_group_type_response,
-        att_encode_read_by_type_response, att_encode_read_response, att_encode_write_response,
-        parse_att, Att, AttErrorCode, AttParseError, AttributeData, AttributePayloadData, Uuid,
+        att_encode_prepare_write_response, att_encode_read_blob_response,
+        att_encode_read_by_group_type_response, att_encode_read_by_type_response,
+        att_encode_read_response, att_encode_write_response, parse_att, Att, AttErrorCode,
+        AttParseError, AttributeData, AttributePayloadData, Uuid,
         ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_FIND_INFORMATION_REQ_OPCODE,
-        ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
-        ATT_READ_BY_TYPE_REQUEST_OPCODE, ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
+        ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BLOB_REQ_OPCODE,
+        ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
+        ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
@@ -20,6 +22,8 @@ use crate::{
 pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
 pub const CHARACTERISTIC_UUID16: Uuid = Uuid::Uuid16(0x2803);
 pub const GENERIC_ATTRIBUTE_UUID16: Uuid = Uuid::Uuid16(0x1801);
+
+const MTU: u16 = 23;
 
 #[derive(Debug)]
 pub enum WorkResult {
@@ -158,6 +162,10 @@ impl<'a> AttributeServer<'a> {
                         Att::ExecuteWriteReq { flags } => {
                             self.handle_execute_write(src_handle, flags);
                         }
+
+                        Att::ReadBlobReq { handle, offset } => {
+                            self.handle_read_blob(src_handle, handle, offset);
+                        }
                     }
 
                     Ok(WorkResult::DidWork)
@@ -216,7 +224,7 @@ impl<'a> AttributeServer<'a> {
             log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
                 let data = match att.data {
-                    AttData::Static(bytes) => Data::new(bytes),
+                    AttData::Static(bytes) => bytes,
                     AttData::Dynamic {
                         ref mut read_function,
                         ..
@@ -224,7 +232,7 @@ impl<'a> AttributeServer<'a> {
                         if let Some(rf) = read_function {
                             (&mut *rf)()
                         } else {
-                            Data::new(&[])
+                            &[]
                         }
                     }
                 };
@@ -256,7 +264,7 @@ impl<'a> AttributeServer<'a> {
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 answer = match att.data {
-                    AttData::Static(bytes) => Some(Data::new(bytes)),
+                    AttData::Static(bytes) => Some(&**bytes),
                     AttData::Dynamic {
                         ref mut read_function,
                         ..
@@ -273,7 +281,8 @@ impl<'a> AttributeServer<'a> {
         }
 
         if let Some(answer) = answer {
-            self.write_att(src_handle, att_encode_read_response(&answer));
+            let len = usize::min(MTU as usize - 1, answer.len() as usize);
+            self.write_att(src_handle, att_encode_read_response(&answer[..len]));
             return;
         }
 
@@ -299,7 +308,7 @@ impl<'a> AttributeServer<'a> {
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(0, data);
+                            (&mut *wf)(0, &data.to_slice());
                         }
                     }
                 };
@@ -327,7 +336,7 @@ impl<'a> AttributeServer<'a> {
 
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
         info!("Requested MTU {}, returning 23", mtu);
-        self.write_att(src_handle, att_encode_exchange_mtu_response(23));
+        self.write_att(src_handle, att_encode_exchange_mtu_response(MTU));
         return;
     }
 
@@ -409,7 +418,7 @@ impl<'a> AttributeServer<'a> {
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(offset, value);
+                            (&mut *wf)(offset, value.to_slice());
                         }
                     }
                 };
@@ -443,6 +452,51 @@ impl<'a> AttributeServer<'a> {
         self.write_att(src_handle, att_encode_execute_write_response());
     }
 
+    fn handle_read_blob(&mut self, src_handle: u16, handle: u16, offset: u16) {
+        let mut answer = None;
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                answer = match att.data {
+                    AttData::Static(bytes) => Some(&**bytes),
+                    AttData::Dynamic {
+                        ref mut read_function,
+                        ..
+                    } => {
+                        if let Some(rf) = read_function {
+                            Some((&mut *rf)())
+                        } else {
+                            None
+                        }
+                    }
+                };
+                break;
+            }
+        }
+
+        if let Some(answer) = answer {
+            let len = usize::min(
+                offset as usize + MTU as usize - 1,
+                answer.len() as usize + 1,
+            ) % MTU as usize
+                + 1;
+            self.write_att(
+                src_handle,
+                att_encode_read_blob_response(&answer[offset as usize..][..len]),
+            );
+            return;
+        }
+
+        // respond with error
+        self.write_att(
+            src_handle,
+            att_encode_error_response(
+                ATT_READ_BLOB_REQ_OPCODE,
+                handle,
+                AttErrorCode::AttributeNotFound,
+            ),
+        );
+    }
+
     fn write_att(&mut self, handle: u16, data: Data) {
         log::info!("src_handle {}", handle);
         log::info!("data {:x?}", data.to_slice());
@@ -467,8 +521,8 @@ pub const ATT_WRITEABLE: u8 = 0x08;
 pub enum AttData<'a> {
     Static(&'a [u8]),
     Dynamic {
-        read_function: Option<&'a mut dyn FnMut() -> Data>,
-        write_function: Option<&'a mut dyn FnMut(u16, Data)>,
+        read_function: Option<&'a mut dyn FnMut() -> &'a [u8]>,
+        write_function: Option<&'a mut dyn FnMut(u16, &[u8])>,
     },
 }
 
@@ -506,9 +560,9 @@ impl<'a> Attribute<'a> {
         }
     }
 
-    fn value(&mut self) -> Data {
+    fn value(&mut self) -> &[u8] {
         match self.data {
-            AttData::Static(bytes) => Data::new(bytes),
+            AttData::Static(bytes) => bytes,
             AttData::Dynamic {
                 ref mut read_function,
                 ..
@@ -516,7 +570,7 @@ impl<'a> Attribute<'a> {
                 if let Some(rf) = read_function {
                     (&mut *rf)()
                 } else {
-                    Data::new(&[])
+                    &[]
                 }
             }
         }

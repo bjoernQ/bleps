@@ -68,12 +68,12 @@ fn main() {
 
         println!("started advertising");
 
-        let mut rf = || Data::new(b"Hello Bare-Metal BLE");
-        let mut wf = |offset, data: Data| {
-            println!("RECEIVED: Offset {}, data {:x?}", offset, data.to_slice());
+        let mut rf = || &b"Hello Bare-Metal BLE 01234567890123456789 ABCDEFG abcdefg"[..];
+        let mut wf = |offset: u16, data: &[u8]| {
+            println!("RECEIVED: Offset {}, data {:x?}", offset, data);
         };
 
-        let mut wf2 = |_offset, _data| {};
+        let mut wf2 = |_offset: u16, _data: &[u8]| {};
 
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
