@@ -17,6 +17,10 @@ pub const ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE: u8 = 0x06;
 //const ATT_FIND_BY_TYPE_VALUE_RESPONSE_OPCODE: u8 = 0x07;
 pub const ATT_FIND_INFORMATION_REQ_OPCODE: u8 = 0x04;
 const ATT_FIND_INFORMATION_RSP_OPCODE: u8 = 0x05;
+pub const ATT_PREPARE_WRITE_REQ_OPCODE: u8 = 0x16;
+const ATT_PREPARE_WRITE_RESP_OPCODE: u8 = 0x17;
+pub const ATT_EXECUTE_WRITE_REQ_OPCODE: u8 = 0x18;
+const ATT_EXECUTE_WRITE_RESP_OPCODE: u8 = 0x19;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Uuid {
@@ -138,6 +142,14 @@ pub enum Att {
         start_handle: u16,
         end_handle: u16,
     },
+    PrepareWriteReq {
+        handle: u16,
+        offset: u16,
+        value: Data,
+    },
+    ExecuteWriteReq {
+        flags: u8,
+    },
 }
 
 #[derive(Debug)]
@@ -231,6 +243,21 @@ pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
                 start_handle,
                 end_handle,
             })
+        }
+        ATT_PREPARE_WRITE_REQ_OPCODE => {
+            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+            let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
+            let value = &payload[4..];
+            log::warn!("{} {} {:x?}", handle, offset, value);
+            Ok(Att::PrepareWriteReq {
+                handle,
+                offset,
+                value: Data::new(value),
+            })
+        }
+        ATT_EXECUTE_WRITE_REQ_OPCODE => {
+            let flags = payload[0];
+            Ok(Att::ExecuteWriteReq { flags })
         }
         _ => Err(AttParseError::UnknownOpcode(opcode, Data::new(payload))),
     }
@@ -376,6 +403,27 @@ pub fn att_encode_find_information_response(uuid_type: u8, list: &[Option<(u16, 
         let uuid_bytes = uuid.encode();
         data.append(uuid_bytes.to_slice());
     }
+
+    data
+}
+
+pub fn att_encode_prepare_write_response(handle: u16, offset: u16, payload: &[u8]) -> Data {
+    log::warn!("{} {} {:x?}", handle, offset, payload);
+
+    let mut data = Data::default();
+
+    data.append(&[ATT_PREPARE_WRITE_RESP_OPCODE]);
+    data.append(&handle.to_le_bytes());
+    data.append(&offset.to_le_bytes());
+    data.append(payload);
+
+    data
+}
+
+pub fn att_encode_execute_write_response() -> Data {
+    let mut data = Data::default();
+
+    data.append(&[ATT_EXECUTE_WRITE_RESP_OPCODE]);
 
     data
 }

@@ -4,12 +4,13 @@ use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
     att::{
         att_encode_error_response, att_encode_exchange_mtu_response,
-        att_encode_find_information_response, att_encode_read_by_group_type_response,
+        att_encode_execute_write_response, att_encode_find_information_response,
+        att_encode_prepare_write_response, att_encode_read_by_group_type_response,
         att_encode_read_by_type_response, att_encode_read_response, att_encode_write_response,
         parse_att, Att, AttErrorCode, AttParseError, AttributeData, AttributePayloadData, Uuid,
         ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_FIND_INFORMATION_REQ_OPCODE,
-        ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
-        ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
+        ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
+        ATT_READ_BY_TYPE_REQUEST_OPCODE, ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
@@ -144,6 +145,18 @@ impl<'a> AttributeServer<'a> {
                             end_handle,
                         } => {
                             self.handle_find_information(src_handle, start_handle, end_handle);
+                        }
+
+                        Att::PrepareWriteReq {
+                            handle,
+                            offset,
+                            value,
+                        } => {
+                            self.handle_prepare_write(src_handle, handle, offset, value);
+                        }
+
+                        Att::ExecuteWriteReq { flags } => {
+                            self.handle_execute_write(src_handle, flags);
                         }
                     }
 
@@ -286,7 +299,7 @@ impl<'a> AttributeServer<'a> {
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(data);
+                            (&mut *wf)(0, data);
                         }
                     }
                 };
@@ -339,23 +352,6 @@ impl<'a> AttributeServer<'a> {
         );
     }
 
-    fn write_att(&mut self, handle: u16, data: Data) {
-        log::info!("src_handle {}", handle);
-        log::info!("data {:x?}", data.to_slice());
-
-        let res = encode_l2cap(data);
-        log::info!("encoded_l2cap {:x?}", res.to_slice());
-
-        let res = encode_acl_packet(
-            handle,
-            BoundaryFlag::FirstAutoFlushable,
-            HostBroadcastFlag::NoBroadcast,
-            res,
-        );
-        log::info!("writing {:x?}", res.to_slice());
-        self.ble.write_bytes(res.to_slice());
-    }
-
     fn handle_find_information(&mut self, src_handle: u16, start: u16, end: u16) {
         let mut response_data_type: Option<u8> = None;
         let mut result_count = 0;
@@ -401,6 +397,68 @@ impl<'a> AttributeServer<'a> {
             ),
         );
     }
+
+    fn handle_prepare_write(&mut self, src_handle: u16, handle: u16, offset: u16, value: Data) {
+        let mut found = false;
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                match att.data {
+                    AttData::Static(_bytes) => (),
+                    AttData::Dynamic {
+                        ref mut write_function,
+                        ..
+                    } => {
+                        if let Some(wf) = write_function {
+                            (&mut *wf)(offset, value);
+                        }
+                    }
+                };
+
+                found = true;
+                break;
+            }
+        }
+
+        if found {
+            self.write_att(
+                src_handle,
+                att_encode_prepare_write_response(handle, offset, value.to_slice()),
+            );
+            return;
+        }
+
+        // respond with error
+        self.write_att(
+            src_handle,
+            att_encode_error_response(
+                ATT_PREPARE_WRITE_REQ_OPCODE,
+                handle,
+                AttErrorCode::AttributeNotFound,
+            ),
+        );
+    }
+
+    fn handle_execute_write(&mut self, src_handle: u16, _flags: u8) {
+        // for now we don't do anything here
+        self.write_att(src_handle, att_encode_execute_write_response());
+    }
+
+    fn write_att(&mut self, handle: u16, data: Data) {
+        log::info!("src_handle {}", handle);
+        log::info!("data {:x?}", data.to_slice());
+
+        let res = encode_l2cap(data);
+        log::info!("encoded_l2cap {:x?}", res.to_slice());
+
+        let res = encode_acl_packet(
+            handle,
+            BoundaryFlag::FirstAutoFlushable,
+            HostBroadcastFlag::NoBroadcast,
+            res,
+        );
+        log::info!("writing {:x?}", res.to_slice());
+        self.ble.write_bytes(res.to_slice());
+    }
 }
 
 pub const ATT_READABLE: u8 = 0x02;
@@ -410,7 +468,7 @@ pub enum AttData<'a> {
     Static(&'a [u8]),
     Dynamic {
         read_function: Option<&'a mut dyn FnMut() -> Data>,
-        write_function: Option<&'a mut dyn FnMut(Data)>,
+        write_function: Option<&'a mut dyn FnMut(u16, Data)>,
     },
 }
 

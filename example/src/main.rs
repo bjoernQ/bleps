@@ -69,11 +69,11 @@ fn main() {
         println!("started advertising");
 
         let mut rf = || Data::new(b"Hello Bare-Metal BLE");
-        let mut wf = |data: Data| {
-            println!("RECEIVED: {:x?}", data.to_slice());
+        let mut wf = |offset, data: Data| {
+            println!("RECEIVED: Offset {}, data {:x?}", offset, data.to_slice());
         };
 
-        let mut wf2 = |_data| {};
+        let mut wf2 = |_offset, _data| {};
 
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
