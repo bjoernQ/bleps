@@ -1,0 +1,22 @@
+[package]
+name = "esp32s3_serial_hci"
+version = "0.1.0"
+authors = ["bjoernQ <bjoern.quentin@mobile-j.de>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[profile.release]
+opt-level = 3
+
+[dependencies]
+esp32s3-hal = "0.4.0"
+esp-backtrace = { version = "0.4.0", features = ["esp32s3", "panic-handler", "print-uart"] }
+esp-println = { version = "0.3.1", features = [ "esp32s3", "log" ] }
+xtensa-lx-rt = { version = "0.14.0", features = ["esp32s3"], optional = true }
+esp-wifi = { git = "https://github.com/esp-rs/esp-wifi", rev = "dbcd5ea4989ff7c295b799c1beb6ffecd78518e3", features = ["esp32s3", "ble"] }
+embedded-io = "0.3.1"
+log = "0.4.17"
+
+[features]
+default = ["rt"]
+rt = ["xtensa-lx-rt"]
