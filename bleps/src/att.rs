@@ -23,6 +23,7 @@ pub const ATT_EXECUTE_WRITE_REQ_OPCODE: u8 = 0x18;
 const ATT_EXECUTE_WRITE_RESP_OPCODE: u8 = 0x19;
 pub const ATT_READ_BLOB_REQ_OPCODE: u8 = 0x0c;
 const ATT_READ_BLOB_RESP_OPCODE: u8 = 0x0d;
+const ATT_HANDLE_VALUE_NTF_OPTCODE: u8 = 0x1b;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Uuid {
@@ -452,6 +453,15 @@ pub fn att_encode_execute_write_response() -> Data {
 pub fn att_encode_read_blob_response(payload: &[u8]) -> Data {
     let mut data = Data::default();
     data.append(&[ATT_READ_BLOB_RESP_OPCODE]);
+    data.append(payload);
+
+    data
+}
+
+pub fn att_encode_value_ntf(handle: u16, payload: &[u8]) -> Data {
+    let mut data = Data::default();
+    data.append(&[ATT_HANDLE_VALUE_NTF_OPTCODE]);
+    data.append(&handle.to_le_bytes());
     data.append(payload);
 
     data

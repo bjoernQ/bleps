@@ -7,8 +7,8 @@ use crate::{
         att_encode_execute_write_response, att_encode_find_information_response,
         att_encode_prepare_write_response, att_encode_read_blob_response,
         att_encode_read_by_group_type_response, att_encode_read_by_type_response,
-        att_encode_read_response, att_encode_write_response, parse_att, Att, AttErrorCode,
-        AttParseError, AttributeData, AttributePayloadData, Uuid,
+        att_encode_read_response, att_encode_value_ntf, att_encode_write_response, parse_att, Att,
+        AttErrorCode, AttParseError, AttributeData, AttributePayloadData, Uuid,
         ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE, ATT_FIND_INFORMATION_REQ_OPCODE,
         ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BLOB_REQ_OPCODE,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
@@ -74,7 +74,40 @@ impl<'a> AttributeServer<'a> {
         AttributeServer { ble, attributes }
     }
 
+    pub fn get_characteristic_value(&mut self, handle: u16) -> Option<&'a [u8]> {
+        match self.attributes[handle as usize].data {
+            AttData::Static(data) => Some(data),
+            AttData::Dynamic {
+                ref mut read_function,
+                ..
+            } => {
+                if let Some(rf) = read_function {
+                    Some((&mut *rf)())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub fn do_work(&mut self) -> Result<WorkResult, AttributeServerError> {
+        self.do_work_with_notification(None)
+    }
+
+    pub fn do_work_with_notification(
+        &mut self,
+        notification_data: Option<NotificationData>,
+    ) -> Result<WorkResult, AttributeServerError> {
+        if let Some(notification_data) = notification_data {
+            let answer = notification_data.data.to_slice();
+            let len = usize::min(MTU as usize - 3, answer.len() as usize);
+            // how to know the handle is 1 or 2?
+            self.write_att(
+                1,
+                att_encode_value_ntf(notification_data.handle, &answer[..len]),
+            );
+        }
+
         let packet = self.ble.poll();
 
         if packet.is_some() {
@@ -573,6 +606,21 @@ impl<'a> Attribute<'a> {
                     &[]
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct NotificationData {
+    handle: u16,
+    data: Data,
+}
+
+impl NotificationData {
+    pub fn new(handle: u16, data: &[u8]) -> Self {
+        Self {
+            handle,
+            data: Data::new(data),
         }
     }
 }

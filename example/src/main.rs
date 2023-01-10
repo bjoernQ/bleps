@@ -1,15 +1,16 @@
 // Use with the esp32s3-serial-hci
 
-use std::time::Duration;
+use std::{process::exit, time::Duration};
 
 use bleps::{
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
-    attribute_server::{AttributeServer, WorkResult},
+    attribute_server::{AttributeServer, NotificationData, WorkResult},
     Ble, HciConnector,
 };
 use bleps_macros::gatt;
+use crossterm::{event::poll, terminal::enable_raw_mode};
 use embedded_io::{
     blocking::{Read, Write},
     Error, Io,
@@ -48,6 +49,9 @@ fn main() {
     }
 
     println!("Connected");
+    println!("C to exit, N to notify");
+
+    enable_raw_mode().unwrap();
 
     loop {
         let connector = BleConnector::new(&mut serial);
@@ -73,7 +77,14 @@ fn main() {
             println!("RECEIVED: Offset {}, data {:x?}", offset, data);
         };
 
-        let mut wf2 = |_offset: u16, _data: &[u8]| {};
+        let mut wf2 = |offset: u16, data: &[u8]| {
+            println!("RECEIVED2: Offset {}, data {:x?}", offset, data);
+        };
+
+        let mut rf3 = || &b"Hola!"[..];
+        let mut wf3 = |offset: u16, data: &[u8]| {
+            println!("RECEIVED3: Offset {}, data {:x?}", offset, data);
+        };
 
         gatt!([service {
             uuid: "937312e0-2354-11eb-9f10-fbc30a62cf38",
@@ -87,13 +98,48 @@ fn main() {
                     uuid: "957312e0-2354-11eb-9f10-fbc30a62cf38",
                     write: wf2,
                 },
+                characteristic {
+                    name: "my_characteristic",
+                    uuid: "987312e0-2354-11eb-9f10-fbc30a62cf38",
+                    notify: true,
+                    read: rf3,
+                    write: wf3,
+                },
             ],
         },]);
 
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes);
 
+        let mut response = [b'H',b'e',b'l',b'l',b'o',b'0'];
+
         loop {
-            match srv.do_work() {
+            let mut notification = None;
+
+            if let Ok(true) = poll(Duration::from_micros(1)) {
+                let event = crossterm::event::read().unwrap();
+                if event
+                    == crossterm::event::Event::Key(crossterm::event::KeyCode::Char('c').into())
+                {
+                    exit(0);
+                }
+                if event
+                    == crossterm::event::Event::Key(crossterm::event::KeyCode::Char('n').into())
+                {
+                    println!("notify if enabled");
+                    if let Some(cccd) =
+                        srv.get_characteristic_value(my_characteristic_notify_enable_handle)
+                    {
+                        // if notifications enabled
+                        if cccd[0] == 1 {
+                            response[5] = b'0' + ((response[5] + 1) % 10);
+                            notification =
+                                Some(NotificationData::new(my_characteristic_handle, &response[..]));
+                        }
+                    }
+                }
+            }
+
+            match srv.do_work_with_notification(notification) {
                 Ok(res) => {
                     if let WorkResult::GotDisconnected = res {
                         println!("Received disconnect");

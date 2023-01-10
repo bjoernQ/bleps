@@ -69,6 +69,8 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                             read: None,
                                             write: None,
                                             description: None,
+                                            notify: false,
+                                            name: None,
                                         };
 
                                         for field in s.fields {
@@ -118,6 +120,28 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         return quote!{ compile_error!("Unexpected"); }.into();
                                                     }
                                                 }
+                                                "notify" => {
+                                                    if let Expr::Lit(value) = field.expr {
+                                                        if let Lit::Bool(s) = value.lit {
+                                                            charact.notify = s.value();
+                                                        } else {
+                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                        }
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "name" => {
+                                                    if let Expr::Lit(value) = field.expr {
+                                                        if let Lit::Str(s) = value.lit {
+                                                            charact.name = Some(s.value());
+                                                        } else {
+                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                        }
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
                                                 _ => {
                                                     return quote! { compile_error!("Unexpected"); }
                                                         .into()
@@ -146,6 +170,9 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
     let mut decls: Vec<_> = Vec::new();
     let mut attribs: Vec<_> = Vec::new();
+    let mut post: Vec<_> = Vec::new();
+    let mut pre: Vec<_> = Vec::new();
+    let mut current_handle: usize = 0;
     for (i, service) in services.iter().enumerate() {
         let uuid_bytes = uuid_to_bytes(&service.uuid);
         let uuid_ident = format_ident!("_uuid{}", i);
@@ -161,6 +188,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
         );
 
         attribs.push(quote!(#primary_service_ident));
+        current_handle += 1;
 
         for (j, characteristic) in service.characteristics.iter().enumerate() {
             let mut char_data: Vec<u8> = Vec::new();
@@ -173,7 +201,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     0x08
                 } else {
                     0
-                },
+                } | if characteristic.notify { 0x10 } else { 0 },
             );
 
             let char_handle = (attribs.len() + 1 + 1) as u16;
@@ -191,6 +219,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 quote!(let #char_data_attribute = Attribute::new(CHARACTERISTIC_UUID16, &mut #char_data_attr);)
             );
             attribs.push(quote!(#char_data_attribute));
+            current_handle += 1;
 
             let gen_attr_att_data_ident = format_ident!("_gen_attr_att_data{}{}", i, j);
 
@@ -222,6 +251,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 );
             }
             attribs.push(quote!(#gen_attr_ident));
+            current_handle += 1;
 
             if characteristic.description.is_some() {
                 let mut char_user_description_data: Vec<u8> = Vec::new();
@@ -241,6 +271,65 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     quote!(let #char_user_description_data_attribute = Attribute::new(Uuid::Uuid16(0x2901), &mut #char_user_description_data_attr);)
                 );
                 attribs.push(quote!(#char_user_description_data_attribute));
+                current_handle += 1;
+            }
+
+            if characteristic.notify {
+                let mut ccd_data: Vec<u8> = Vec::new();
+                ccd_data.extend(&[0u8, 0u8]);
+                let ccd_data_ident = format_ident!("_char_ccd_data{}{}", i, j);
+                decls.push(quote!(let #ccd_data_ident = [ #(#ccd_data),* ] ;));
+
+                let char_ccd_data_attr = format_ident!("_char_ccd_data_attr{}{}", i, j);
+                let rfunction = format_ident!("_attr_read{}", current_handle);
+                let wfunction = format_ident!("_attr_write{}", current_handle);
+                decls.push(
+                    quote!(let mut #char_ccd_data_attr = AttData::Dynamic { read_function: Some(&mut #rfunction), write_function: Some(&mut #wfunction)};)
+                );
+
+                let backing_data = format_ident!("_attr_data{}", current_handle);
+                pre.push(quote!(
+                    static mut #backing_data: [u8;2] = [0u8;2];
+
+                    let mut #rfunction = || unsafe {& #backing_data[..]};
+                    let mut #wfunction = |offset: u16, data: &[u8]| {
+                        unsafe {
+                            #backing_data.copy_from_slice(data);
+                        }
+                    };
+                ));
+
+                let char_ccd_data_attribute = format_ident!("_char_ccd_data_attribute{}{}", i, j);
+                decls.push(
+                    quote!(let #char_ccd_data_attribute = Attribute::new(Uuid::Uuid16(0x2902), &mut #char_ccd_data_attr);)
+                );
+                attribs.push(quote!(#char_ccd_data_attribute));
+                current_handle += 1;
+            }
+
+            if let Some(name) = &characteristic.name {
+                let char_data_handle = (current_handle
+                    - if characteristic.notify { 1 } else { 0 }
+                    - if characteristic.description.is_some() {
+                        1
+                    } else {
+                        0
+                    }) as u16;
+
+                let char_handle_name = format_ident!("{}_handle", name);
+                post.push(quote!(let #char_handle_name = #char_data_handle;));
+
+                if characteristic.notify {
+                    let char_notify_enable_handle_name =
+                        format_ident!("{}_notify_enable_handle", name);
+                    let handle = char_data_handle
+                        + if characteristic.description.is_some() {
+                            1
+                        } else {
+                            0
+                        };
+                    post.push(quote!(let #char_notify_enable_handle_name = #handle;));
+                }
             }
         }
     }
@@ -253,8 +342,11 @@ pub fn gatt(input: TokenStream) -> TokenStream {
         use bleps::attribute_server::CHARACTERISTIC_UUID16;
         use bleps::attribute_server::PRIMARY_SERVICE_UUID16;
 
+        #(#pre)*
         #(#decls)*
         let mut gatt_attributes = [ #(#attribs),* ];
+
+        #(#post)*
     };
 
     code.into()
@@ -294,4 +386,6 @@ struct Characteristic {
     read: Option<String>,
     write: Option<String>,
     description: Option<String>,
+    notify: bool,
+    name: Option<String>,
 }

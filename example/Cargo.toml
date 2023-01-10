@@ -9,3 +9,4 @@ embedded-io = { version = "0.3.1", features = ["std"] }
 bleps = { path = "../bleps" }
 bleps-macros = { path = "../bleps-macros" }
 env_logger = "0.10.0"
+crossterm = "0.25.0"
