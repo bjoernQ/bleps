@@ -10,7 +10,10 @@ use bleps::{
     Ble, HciConnector,
 };
 use bleps_macros::gatt;
-use crossterm::{event::poll, terminal::enable_raw_mode};
+use crossterm::{
+    event::{poll, KeyCode},
+    terminal::enable_raw_mode,
+};
 use embedded_io::{
     blocking::{Read, Write},
     Error, Io,
@@ -49,7 +52,7 @@ fn main() {
     }
 
     println!("Connected");
-    println!("C to exit, N to notify");
+    println!("Q to exit, N to notify, X force disconnect");
 
     enable_raw_mode().unwrap();
 
@@ -72,7 +75,7 @@ fn main() {
 
         println!("started advertising");
 
-        let mut rf = || &b"Hello Bare-Metal BLE 01234567890123456789 ABCDEFG abcdefg"[..];
+        let mut rf = || &b"Hello BLE! Hello BLE! 01234567890123456789 ABCDEFG abcdefg"[..];
         let mut wf = |offset: u16, data: &[u8]| {
             println!("RECEIVED: Offset {}, data {:x?}", offset, data);
         };
@@ -110,32 +113,44 @@ fn main() {
 
         let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes);
 
-        let mut response = [b'H',b'e',b'l',b'l',b'o',b'0'];
+        let mut response = [b'H', b'e', b'l', b'l', b'o', b'0'];
 
         loop {
             let mut notification = None;
 
             if let Ok(true) = poll(Duration::from_micros(1)) {
                 let event = crossterm::event::read().unwrap();
-                if event
-                    == crossterm::event::Event::Key(crossterm::event::KeyCode::Char('c').into())
-                {
-                    exit(0);
-                }
-                if event
-                    == crossterm::event::Event::Key(crossterm::event::KeyCode::Char('n').into())
-                {
-                    println!("notify if enabled");
-                    if let Some(cccd) =
-                        srv.get_characteristic_value(my_characteristic_notify_enable_handle)
-                    {
-                        // if notifications enabled
-                        if cccd[0] == 1 {
-                            response[5] = b'0' + ((response[5] + 1) % 10);
-                            notification =
-                                Some(NotificationData::new(my_characteristic_handle, &response[..]));
+                match event {
+                    crossterm::event::Event::Key(key_event) => match key_event.code {
+                        crossterm::event::KeyCode::Char('c')
+                            if key_event.modifiers == crossterm::event::KeyModifiers::CONTROL =>
+                        {
+                            exit(0);
                         }
-                    }
+                        crossterm::event::KeyCode::Char('q') => {
+                            exit(0);
+                        }
+                        crossterm::event::KeyCode::Char('n') => {
+                            println!("notify if enabled");
+                            if let Some(cccd) =
+                                srv.get_characteristic_value(my_characteristic_notify_enable_handle)
+                            {
+                                // if notifications enabled
+                                if cccd[0] == 1 {
+                                    response[5] = b'0' + ((response[5] + 1) % 10);
+                                    notification = Some(NotificationData::new(
+                                        my_characteristic_handle,
+                                        &response[..],
+                                    ));
+                                }
+                            }
+                        }
+                        crossterm::event::KeyCode::Char('x') => {
+                            srv.disconnect(0x13).unwrap();
+                        }
+                        _ => (),
+                    },
+                    _ => (),
                 }
             }
 

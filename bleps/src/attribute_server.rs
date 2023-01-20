@@ -14,9 +14,10 @@ use crate::{
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
+    command::{create_command_data, Command},
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
-    Ble, Data,
+    Ble, Data, Error,
 };
 
 pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
@@ -88,6 +89,17 @@ impl<'a> AttributeServer<'a> {
                 }
             }
         }
+    }
+
+    pub fn disconnect(&mut self, reason: u8) -> Result<EventType, Error> {
+        self.ble.write_bytes(
+            create_command_data(Command::Disconnect {
+                connection_handle: 0,
+                reason,
+            })
+            .to_slice(),
+        );
+        Ok(EventType::Unknown)
     }
 
     pub fn do_work(&mut self) -> Result<WorkResult, AttributeServerError> {
