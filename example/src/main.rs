@@ -10,10 +10,6 @@ use bleps::{
     Ble, HciConnector,
 };
 use bleps_macros::gatt;
-use crossterm::{
-    event::{poll, KeyCode},
-    terminal::enable_raw_mode,
-};
 use embedded_io::{
     blocking::{Read, Write},
     Error, Io,
@@ -54,7 +50,7 @@ fn main() {
     println!("Connected");
     println!("Q to exit, N to notify, X force disconnect");
 
-    enable_raw_mode().unwrap();
+    crossterm::terminal::enable_raw_mode().unwrap();
 
     loop {
         let connector = BleConnector::new(&mut serial);
@@ -118,7 +114,7 @@ fn main() {
         loop {
             let mut notification = None;
 
-            if let Ok(true) = poll(Duration::from_micros(1)) {
+            if let Ok(true) = crossterm::event::poll(Duration::from_micros(1)) {
                 let event = crossterm::event::read().unwrap();
                 match event {
                     crossterm::event::Event::Key(key_event) => match key_event.code {
