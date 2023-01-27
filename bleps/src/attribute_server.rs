@@ -52,6 +52,7 @@ impl From<AttParseError> for AttributeServerError {
 
 pub struct AttributeServer<'a> {
     ble: &'a mut Ble<'a>,
+    src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
 }
 
@@ -72,7 +73,11 @@ impl<'a> AttributeServer<'a> {
 
         log::trace!("{:#x?}", &attributes);
 
-        AttributeServer { ble, attributes }
+        AttributeServer {
+            ble,
+            src_handle: 0,
+            attributes,
+        }
     }
 
     pub fn get_characteristic_value(&mut self, handle: u16) -> Option<&'a [u8]> {
@@ -113,9 +118,8 @@ impl<'a> AttributeServer<'a> {
         if let Some(notification_data) = notification_data {
             let answer = notification_data.data.to_slice();
             let len = usize::min(MTU as usize - 3, answer.len() as usize);
-            // how to know the handle is 1 or 2?
             self.write_att(
-                1,
+                self.src_handle,
                 att_encode_value_ntf(notification_data.handle, &answer[..len]),
             );
         }
@@ -167,6 +171,7 @@ impl<'a> AttributeServer<'a> {
                         }
 
                         Att::WriteReq { handle, data } => {
+                            self.src_handle = src_handle;
                             self.handle_write_req(src_handle, handle, data);
                         }
 
