@@ -17,6 +17,13 @@ pub const ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE: u8 = 0x06;
 //const ATT_FIND_BY_TYPE_VALUE_RESPONSE_OPCODE: u8 = 0x07;
 pub const ATT_FIND_INFORMATION_REQ_OPCODE: u8 = 0x04;
 const ATT_FIND_INFORMATION_RSP_OPCODE: u8 = 0x05;
+pub const ATT_PREPARE_WRITE_REQ_OPCODE: u8 = 0x16;
+const ATT_PREPARE_WRITE_RESP_OPCODE: u8 = 0x17;
+pub const ATT_EXECUTE_WRITE_REQ_OPCODE: u8 = 0x18;
+const ATT_EXECUTE_WRITE_RESP_OPCODE: u8 = 0x19;
+pub const ATT_READ_BLOB_REQ_OPCODE: u8 = 0x0c;
+const ATT_READ_BLOB_RESP_OPCODE: u8 = 0x0d;
+const ATT_HANDLE_VALUE_NTF_OPTCODE: u8 = 0x1b;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Uuid {
@@ -61,6 +68,19 @@ impl From<Data> for Uuid {
             2 => Uuid::Uuid16(u16::from_le_bytes(data.to_slice().try_into().unwrap())),
             16 => {
                 let bytes: [u8; 16] = data.to_slice().try_into().unwrap();
+                Uuid::Uuid128(bytes)
+            }
+            _ => panic!(),
+        }
+    }
+}
+
+impl From<&[u8]> for Uuid {
+    fn from(data: &[u8]) -> Self {
+        match data.len() {
+            2 => Uuid::Uuid16(u16::from_le_bytes(data.try_into().unwrap())),
+            16 => {
+                let bytes: [u8; 16] = data.try_into().unwrap();
                 Uuid::Uuid128(bytes)
             }
             _ => panic!(),
@@ -137,6 +157,18 @@ pub enum Att {
     FindInformation {
         start_handle: u16,
         end_handle: u16,
+    },
+    PrepareWriteReq {
+        handle: u16,
+        offset: u16,
+        value: Data,
+    },
+    ExecuteWriteReq {
+        flags: u8,
+    },
+    ReadBlobReq {
+        handle: u16,
+        offset: u16,
     },
 }
 
@@ -232,6 +264,25 @@ pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
                 end_handle,
             })
         }
+        ATT_PREPARE_WRITE_REQ_OPCODE => {
+            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+            let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
+            let value = &payload[4..];
+            Ok(Att::PrepareWriteReq {
+                handle,
+                offset,
+                value: Data::new(value),
+            })
+        }
+        ATT_EXECUTE_WRITE_REQ_OPCODE => {
+            let flags = payload[0];
+            Ok(Att::ExecuteWriteReq { flags })
+        }
+        ATT_READ_BLOB_REQ_OPCODE => {
+            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+            let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
+            Ok(Att::ReadBlobReq { handle, offset })
+        }
         _ => Err(AttParseError::UnknownOpcode(opcode, Data::new(payload))),
     }
 }
@@ -272,13 +323,13 @@ impl AttributeData {
 }
 
 #[derive(Debug)]
-pub struct AttributePayloadData {
+pub struct AttributePayloadData<'a> {
     attribute_handle: u16,
-    attribute_value: Data,
+    attribute_value: &'a [u8],
 }
 
-impl AttributePayloadData {
-    pub fn new(attribute_handle: u16, attribute_value: Data) -> AttributePayloadData {
+impl<'a> AttributePayloadData<'a> {
+    pub fn new(attribute_handle: u16, attribute_value: &'a [u8]) -> AttributePayloadData<'a> {
         AttributePayloadData {
             attribute_handle,
             attribute_value,
@@ -291,12 +342,12 @@ impl AttributePayloadData {
             (self.attribute_handle & 0xff) as u8,
             ((self.attribute_handle >> 8) & 0xff) as u8,
         ]);
-        data.append(self.attribute_value.to_slice());
+        data.append(self.attribute_value);
         data
     }
 
     pub fn len(&self) -> usize {
-        2 + self.attribute_value.len
+        2 + self.attribute_value.len()
     }
 }
 
@@ -341,10 +392,10 @@ pub fn att_encode_read_by_type_response(attribute_list: &[AttributePayloadData])
     data
 }
 
-pub fn att_encode_read_response(payload: &Data) -> Data {
+pub fn att_encode_read_response(payload: &[u8]) -> Data {
     let mut data = Data::default();
     data.append(&[ATT_READ_RESPONSE_OPCODE]);
-    data.append(payload.to_slice());
+    data.append(payload);
 
     data
 }
@@ -376,6 +427,42 @@ pub fn att_encode_find_information_response(uuid_type: u8, list: &[Option<(u16, 
         let uuid_bytes = uuid.encode();
         data.append(uuid_bytes.to_slice());
     }
+
+    data
+}
+
+pub fn att_encode_prepare_write_response(handle: u16, offset: u16, payload: &[u8]) -> Data {
+    let mut data = Data::default();
+
+    data.append(&[ATT_PREPARE_WRITE_RESP_OPCODE]);
+    data.append(&handle.to_le_bytes());
+    data.append(&offset.to_le_bytes());
+    data.append(payload);
+
+    data
+}
+
+pub fn att_encode_execute_write_response() -> Data {
+    let mut data = Data::default();
+
+    data.append(&[ATT_EXECUTE_WRITE_RESP_OPCODE]);
+
+    data
+}
+
+pub fn att_encode_read_blob_response(payload: &[u8]) -> Data {
+    let mut data = Data::default();
+    data.append(&[ATT_READ_BLOB_RESP_OPCODE]);
+    data.append(payload);
+
+    data
+}
+
+pub fn att_encode_value_ntf(handle: u16, payload: &[u8]) -> Data {
+    let mut data = Data::default();
+    data.append(&[ATT_HANDLE_VALUE_NTF_OPTCODE]);
+    data.append(&handle.to_le_bytes());
+    data.append(payload);
 
     data
 }

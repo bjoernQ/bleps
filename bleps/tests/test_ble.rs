@@ -487,10 +487,7 @@ fn receiving_read_by_type_works() {
 
 #[test]
 fn create_read_by_type_resp_works() {
-    let attribute_list = [AttributePayloadData::new(
-        0x0002,
-        Data::new(&[1u8, 2u8, 3u8, 4u8]),
-    )];
+    let attribute_list = [AttributePayloadData::new(0x0002, &[1u8, 2u8, 3u8, 4u8])];
     let res = att_encode_read_by_type_response(&attribute_list);
 
     assert_matches!(
@@ -527,7 +524,7 @@ fn receiving_read_works() {
 
 #[test]
 fn create_read_resp_works() {
-    let res = att_encode_read_response(&Data::new(&[0x01, 0x02, 0x03, 0x04]));
+    let res = att_encode_read_response(&[0x01, 0x02, 0x03, 0x04]);
 
     assert_matches!(res.to_slice(), &[0x0b, 0x01, 0x02, 0x03, 0x04,]);
 }
@@ -592,12 +589,11 @@ fn attribute_server_discover_two_services() {
     let connector = connector();
     let mut ble = Ble::new(&connector);
 
-    // TODO create a proc macro to make this less annoying
-    let mut rf1 = || Data::default();
-    let mut wf1 = |_data: Data| {};
+    let mut rf1 = || &[0u8][..];
+    let mut wf1 = |_, _data: &[u8]| {};
 
-    let mut rf2 = || Data::default();
-    let mut wf2 = |_data: Data| {};
+    let mut rf2 = || &[0u8][..];
+    let mut wf2 = |_, _data: &[u8]| {};
 
     let srv_uuid: [u8; 16] = [
         0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,

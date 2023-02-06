@@ -2,8 +2,8 @@ use bleps_macros::gatt;
 
 #[test]
 fn test() {
-    let mut my_read_function = || Data::new(b"Hello");
-    let mut my_write_function = |data: Data| {
+    let mut my_read_function = || &b"Hello"[..];
+    let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
 
@@ -21,8 +21,8 @@ fn test() {
 
 #[test]
 fn test2() {
-    let mut my_read_function = || Data::new(b"Hello");
-    let mut my_write_function = |data: Data| {
+    let mut my_read_function = || &b"Hello"[..];
+    let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
 
@@ -40,8 +40,8 @@ fn test2() {
 
 #[test]
 fn test3() {
-    let mut my_read_function = || Data::new(b"Hello");
-    let mut my_write_function = |data: Data| {
+    let mut my_read_function = || &b"Hello"[..];
+    let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
 
@@ -56,4 +56,29 @@ fn test3() {
     },]);
 
     println!("{:x?}", gatt_attributes);
+}
+
+#[test]
+fn test4() {
+    let mut my_read_function = || &b"Hello"[..];
+    let mut my_write_function = |_offset, data: &[u8]| {
+        println!("{:?}", data);
+    };
+
+    gatt!([service {
+        uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+        characteristics: [characteristic {
+            name: "my_characteristic",
+            uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+            read: my_read_function,
+            write: my_write_function,
+            description: "something",
+            notify: true,
+        },],
+    },]);
+
+    println!("{:x?}", gatt_attributes);
+
+    println!("{}", my_characteristic_handle);
+    println!("{}", my_characteristic_notify_enable_handle);
 }

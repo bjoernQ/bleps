@@ -8,6 +8,9 @@ pub const SET_ADVERTISING_PARAMETERS_OCF: u16 = 0x06;
 pub const SET_ADVERTISING_DATA_OCF: u16 = 0x08;
 pub const SET_ADVERTISE_ENABLE_OCF: u16 = 0x0a;
 
+pub const LINK_CONTROL_OGF: u8 = 0x01;
+pub const DISCONNECT_OCF: u16 = 0x06;
+
 #[derive(Debug)]
 pub struct CommandHeader {
     pub opcode: u16,
@@ -51,6 +54,7 @@ pub enum Command {
     LeSetAdvertisingParameters,
     LeSetAdvertisingData { data: Data },
     LeSetAdvertiseEnable(bool),
+    Disconnect { connection_handle: u16, reason: u8 },
 }
 
 pub fn create_command_data(command: Command) -> Data {
@@ -85,6 +89,18 @@ pub fn create_command_data(command: Command) -> Data {
             CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISE_ENABLE_OCF, 0x01)
                 .write_into(&mut data[1..]);
             data[4] = if enable { 1 } else { 0 };
+            Data::new(&data)
+        }
+        Command::Disconnect {
+            connection_handle,
+            reason,
+        } => {
+            let mut data = [0u8; 7];
+            data[0] = 0x01;
+            CommandHeader::from_ogf_ocf(LINK_CONTROL_OGF, DISCONNECT_OCF, 0x03)
+                .write_into(&mut data[1..]);
+            data[4..][..2].copy_from_slice(&connection_handle.to_le_bytes());
+            data[6] = reason;
             Data::new(&data)
         }
     }
