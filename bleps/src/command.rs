@@ -1,4 +1,4 @@
-use crate::Data;
+use crate::{AdvertisingParameters, Data};
 
 pub const CONTROLLER_OGF: u8 = 0x03;
 pub const RESET_OCF: u16 = 0x03;
@@ -49,9 +49,10 @@ impl CommandHeader {
     }
 }
 
-pub enum Command {
+pub enum Command<'a> {
     Reset,
     LeSetAdvertisingParameters,
+    LeSetAdvertisingParametersCustom(&'a AdvertisingParameters),
     LeSetAdvertisingData { data: Data },
     LeSetAdvertiseEnable(bool),
     Disconnect { connection_handle: u16, reason: u8 },
@@ -70,8 +71,26 @@ pub fn create_command_data(command: Command) -> Data {
             data[0] = 0x01;
             CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
                 .write_into(&mut data[1..]);
-            // TODO create this - not hardcoded
             data[4..].copy_from_slice(&[0x00, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0]);
+            Data::new(&data)
+        }
+        Command::LeSetAdvertisingParametersCustom(params) => {
+            let mut data = [0u8; 4 + 0xf];
+            data[0] = 0x01;
+            CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
+                .write_into(&mut data[1..]);
+
+            let mut adv_params = Data::new(&[]);
+            adv_params.append(&params.advertising_interval_min.to_be_bytes());
+            adv_params.append(&params.advertising_interval_max.to_be_bytes());
+            adv_params.append(&[params.advertising_type as u8]);
+            adv_params.append(&[params.own_address_type as u8]);
+            adv_params.append(&[params.peer_address_type as u8]);
+            adv_params.append(&params.peer_address);
+            adv_params.append(&[params.advertising_channel_map]);
+            adv_params.append(&[params.filter_policy as u8]);
+
+            data[4..].copy_from_slice(adv_params.to_slice());
             Data::new(&data)
         }
         Command::LeSetAdvertisingData { ref data } => {

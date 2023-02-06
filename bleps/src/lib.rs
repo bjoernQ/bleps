@@ -93,6 +93,56 @@ impl core::fmt::Debug for Data {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum AdvertisingType {
+    AdvInd = 0x00,
+    AdvDirectInd = 0x01,
+    AdvScanInd = 0x02,
+    AdvNonConnInd = 0x03,
+    AdvDirectIndLowDuty = 0x04,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum OwnAddressType {
+    Public = 0x00,
+    Random = 0x01,
+    ResolvablePrivateAddress = 0x02,
+    ResolvablePrivateAddressFromIRK = 0x03,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PeerAddressType {
+    Public = 0x00,
+    Random = 0x01,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AdvertisingChannelMapBits {
+    Channel37 = 0b001,
+    Channel38 = 0b010,
+    Channel39 = 0b100,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AdvertisingFilterPolicy {
+    All = 0x00,
+    FilteredScanAllConnect = 0x01,
+    AllScanFilteredConnect = 0x02,
+    Filtered = 0x03,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AdvertisingParameters {
+    pub advertising_interval_min: u16,
+    pub advertising_interval_max: u16,
+    pub advertising_type: AdvertisingType,
+    pub own_address_type: OwnAddressType,
+    pub peer_address_type: PeerAddressType,
+    pub peer_address: [u8; 6],
+    pub advertising_channel_map: u8,
+    pub filter_policy: AdvertisingFilterPolicy,
+}
+
 const PACKET_TYPE_COMMAND: u8 = 0x01;
 const PACKET_TYPE_ASYNC_DATA: u8 = 0x02;
 const PACKET_TYPE_EVENT: u8 = 0x04;
@@ -142,6 +192,21 @@ impl<'a> Ble<'a> {
         Self: Sized,
     {
         self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).to_slice());
+        check_command_completed(
+            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
+        )
+    }
+
+    pub fn cmd_set_le_advertising_parameters_custom(
+        &mut self,
+        params: &AdvertisingParameters,
+    ) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(
+            create_command_data(Command::LeSetAdvertisingParametersCustom(params)).to_slice(),
+        );
         check_command_completed(
             self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
         )

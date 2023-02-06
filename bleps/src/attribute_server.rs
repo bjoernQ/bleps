@@ -14,7 +14,8 @@ use crate::{
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
-    command::{create_command_data, Command},
+    check_command_completed,
+    command::{create_command_data, Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
     l2cap::{encode_l2cap, parse_l2cap, L2capParseError},
     Ble, Data, Error,
@@ -94,6 +95,15 @@ impl<'a> AttributeServer<'a> {
                 }
             }
         }
+    }
+
+    pub fn update_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error> {
+        self.ble
+            .write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).to_slice());
+        check_command_completed(
+            self.ble
+                .wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)?,
+        )
     }
 
     pub fn disconnect(&mut self, reason: u8) -> Result<EventType, Error> {
