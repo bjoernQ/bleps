@@ -68,6 +68,48 @@ pub fn parse_acl_packet(connector: &dyn HciConnection) -> AclPacket {
     }
 }
 
+#[cfg(feature = "async")]
+pub async fn async_parse_acl_packet<T>(connector: &mut T) -> AclPacket
+where
+    T: embedded_io::asynch::Read,
+{
+    let mut raw_handle_buffer = [0u8; 2];
+    let _raw_handle_len = connector.read(&mut raw_handle_buffer).await.unwrap();
+    let raw_handle = raw_handle_buffer[0] as u16 + ((raw_handle_buffer[1] as u16) << 8);
+
+    let pb = (raw_handle & 0b0011000000000000) >> 12;
+    let pb = match pb {
+        0b00 => BoundaryFlag::FirstNonAutoFlushable,
+        0b01 => BoundaryFlag::Continuing,
+        0b10 => BoundaryFlag::FirstAutoFlushable,
+        0b11 => BoundaryFlag::Complete,
+        _ => panic!("Unexpected boundary flag"),
+    };
+
+    let bc = (raw_handle & 0b1100000000000000) >> 14;
+    let bc = match bc {
+        0b00 => ControllerBroadcastFlag::PointToPoint,
+        0b01 => ControllerBroadcastFlag::NotParkedState,
+        0b10 => ControllerBroadcastFlag::ParkedState,
+        0b11 => ControllerBroadcastFlag::Reserved,
+        _ => panic!("Unexpected broadcast flag"),
+    };
+
+    let handle = raw_handle & 0b111111111111;
+
+    let mut len_buffer = [0u8; 2];
+    let _len_len = connector.read(&mut len_buffer).await.unwrap();
+    let len = len_buffer[0] as u16 + ((len_buffer[1] as u16) << 8);
+    let data = crate::asynch::read_to_data(connector, len as usize).await;
+
+    AclPacket {
+        handle: handle,
+        boundary_flag: pb,
+        bc_flag: bc,
+        data: data,
+    }
+}
+
 // including type (0x02)
 pub fn encode_acl_packet(
     handle: u16,
