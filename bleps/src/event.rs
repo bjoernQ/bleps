@@ -130,3 +130,74 @@ fn read_to_event(connector: &dyn HciConnection) -> Event {
     let data = read_to_data(connector, len);
     Event { code, data }
 }
+
+#[cfg(feature = "async")]
+/// Parses a command and assumes the packet type (0x04) is already read.
+pub async fn async_parse_event<T>(connector: &mut T) -> EventType
+where
+    T: embedded_io::asynch::Read,
+{
+    let event = async_read_to_event(connector).await;
+
+    match event.code {
+        EVENT_COMMAND_COMPLETE => {
+            let data = event.data.to_slice();
+            let num_packets = data[0];
+            let opcode = ((data[2] as u16) << 8) + data[1] as u16;
+            let data = event.data.subdata_from(3);
+            EventType::CommandComplete {
+                num_packets,
+                opcode,
+                data,
+            }
+        }
+        EVENT_DISCONNECTION_COMPLETE => {
+            let data = event.data.to_slice();
+            let status = data[0];
+            let handle = ((data[2] as u16) << 8) + data[1] as u16;
+            let reason = data[3];
+            let status = ErrorCode::from_u8(status);
+            let reason = ErrorCode::from_u8(reason);
+            EventType::DisconnectComplete {
+                handle,
+                status,
+                reason,
+            }
+        }
+        EVENT_NUMBER_OF_COMPLETED_PACKETS => {
+            let data = event.data.to_slice();
+            let num_handles = data[0];
+            let connection_handle = ((data[2] as u16) << 8) + data[1] as u16;
+            let completed_packet = ((data[4] as u16) << 8) + data[3] as u16;
+            EventType::NumberOfCompletedPackets {
+                number_of_connection_handles: num_handles,
+                connection_handles: connection_handle,
+                completed_packets: completed_packet,
+            }
+        }
+        _ => {
+            info!(
+                "Ignoring unknown event {:02x} data = {:02x?}",
+                event.code,
+                event.data.to_slice()
+            );
+            EventType::Unknown
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+async fn async_read_to_event<T>(connector: &mut T) -> Event
+where
+    T: embedded_io::asynch::Read,
+{
+    let mut buffer = [0u8];
+    let _code_len = connector.read(&mut buffer).await.unwrap();
+    let code = buffer[0];
+
+    let _len_len = connector.read(&mut buffer).await.unwrap();
+    let len = buffer[0] as usize;
+
+    let data = crate::asynch::read_to_data(connector, len).await;
+    Event { code, data }
+}

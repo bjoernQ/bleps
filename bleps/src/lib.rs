@@ -1,5 +1,7 @@
 #![no_std]
 #![feature(assert_matches)]
+#![cfg_attr(feature = "async", feature(async_fn_in_trait))]
+#![cfg_attr(feature = "async", allow(incomplete_features))]
 
 use core::cell::RefCell;
 
@@ -21,6 +23,9 @@ pub mod event;
 pub mod ad_structure;
 
 pub mod attribute_server;
+
+#[cfg(feature = "async")]
+pub mod async_attribute_server;
 
 use command::CONTROLLER_OGF;
 use command::RESET_OCF;
@@ -355,5 +360,202 @@ where
 
     fn millis(&self) -> u64 {
         (self.get_millis)()
+    }
+}
+
+#[cfg(feature = "async")]
+pub mod asynch {
+    use crate::{acl::async_parse_acl_packet, event::async_parse_event};
+
+    use super::*;
+
+    pub struct Ble<T>
+    where
+        T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+    {
+        hci: RefCell<T>,
+        get_millis: fn() -> u64,
+    }
+
+    impl<T> Ble<T>
+    where
+        T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+    {
+        pub fn new(hci: T, get_millis: fn() -> u64) -> Ble<T> {
+            Ble {
+                hci: RefCell::new(hci),
+                get_millis,
+            }
+        }
+
+        fn millis(&self) -> u64 {
+            (self.get_millis)()
+        }
+
+        pub async fn init(&mut self) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            Ok(self.cmd_reset().await?)
+        }
+
+        pub async fn cmd_reset(&mut self) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(create_command_data(Command::Reset).to_slice())
+                .await;
+            check_command_completed(
+                self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
+                    .await?,
+            )
+        }
+
+        pub async fn cmd_set_le_advertising_parameters(&mut self) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).to_slice())
+                .await;
+            check_command_completed(
+                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
+                    .await?,
+            )
+        }
+
+        pub async fn cmd_set_le_advertising_parameters_custom(
+            &mut self,
+            params: &AdvertisingParameters,
+        ) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(
+                create_command_data(Command::LeSetAdvertisingParametersCustom(params)).to_slice(),
+            )
+            .await;
+            check_command_completed(
+                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
+                    .await?,
+            )
+        }
+
+        pub async fn cmd_set_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(
+                create_command_data(Command::LeSetAdvertisingData { data }).to_slice(),
+            )
+            .await;
+            check_command_completed(
+                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)
+                    .await?,
+            )
+        }
+
+        pub async fn cmd_set_le_advertise_enable(
+            &mut self,
+            enable: bool,
+        ) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).to_slice())
+                .await;
+            check_command_completed(
+                self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)
+                    .await?,
+            )
+        }
+
+        pub(crate) async fn wait_for_command_complete(
+            &mut self,
+            ogf: u8,
+            ocf: u16,
+        ) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            let timeout_at = self.millis() + TIMEOUT_MILLIS;
+            loop {
+                let res = self.poll().await;
+
+                match res {
+                    Some(PollResult::Event(event)) => match event {
+                        EventType::CommandComplete { opcode: code, .. }
+                            if code == opcode(ogf, ocf) =>
+                        {
+                            return Ok(event);
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                }
+
+                if self.millis() > timeout_at {
+                    return Err(Error::Timeout);
+                }
+            }
+        }
+
+        pub async fn poll(&mut self) -> Option<PollResult>
+        where
+            Self: Sized,
+        {
+            // poll & process input
+            let packet_type = {
+                let mut buffer = [0u8];
+                self.hci.borrow_mut().read(&mut buffer).await.unwrap();
+                Some(buffer[0])
+            };
+
+            match packet_type {
+                Some(packet_type) => match packet_type {
+                    PACKET_TYPE_COMMAND => {}
+                    PACKET_TYPE_ASYNC_DATA => {
+                        let acl_packet = async_parse_acl_packet(&mut *self.hci.borrow_mut()).await;
+                        return Some(PollResult::AsyncData(acl_packet));
+                    }
+                    PACKET_TYPE_EVENT => {
+                        let event = async_parse_event(&mut *self.hci.borrow_mut()).await;
+                        return Some(PollResult::Event(event));
+                    }
+                    _ => {
+                        // this is an serious error
+                        panic!("Unknown packet type {}", packet_type);
+                    }
+                },
+                None => {}
+            }
+
+            None
+        }
+
+        pub(crate) async fn write_bytes(&mut self, bytes: &[u8]) {
+            self.hci.borrow_mut().write(bytes).await.unwrap();
+        }
+    }
+
+    pub(crate) async fn read_to_data<T>(mut connector: T, len: usize) -> Data
+    where
+        T: embedded_io::asynch::Read,
+    {
+        let mut idx = 0;
+        let mut data = [0u8; 128];
+        loop {
+            let l = connector.read(&mut data[idx..][..len]).await.unwrap();
+            idx += l;
+
+            if idx >= len {
+                break;
+            }
+
+            // TODO timeout?
+        }
+
+        let mut data = Data::new(&data);
+        data.len = len;
+        data
     }
 }
