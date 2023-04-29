@@ -90,7 +90,7 @@ pub fn create_command_data(command: Command) -> Data {
             adv_params.append(&[params.advertising_channel_map]);
             adv_params.append(&[params.filter_policy as u8]);
 
-            data[4..].copy_from_slice(adv_params.to_slice());
+            data[4..].copy_from_slice(adv_params.as_slice());
             Data::new(&data)
         }
         Command::LeSetAdvertisingData { ref data } => {
@@ -99,7 +99,7 @@ pub fn create_command_data(command: Command) -> Data {
             CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_DATA_OCF, data.len as u8)
                 .write_into(&mut header[1..]);
             let mut res = Data::new(&header);
-            res.append(data.to_slice());
+            res.append(data.as_slice());
             res
         }
         Command::LeSetAdvertiseEnable(enable) => {

@@ -63,7 +63,7 @@ impl Data {
         }
     }
 
-    pub fn to_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[u8] {
         &self.data[0..self.len]
     }
 
@@ -99,6 +99,24 @@ impl Data {
     pub fn append(&mut self, bytes: &[u8]) {
         self.data[self.len..(self.len + bytes.len())].copy_from_slice(bytes);
         self.len += bytes.len();
+    }
+
+    pub fn append_value<T: Sized + 'static>(&mut self, value: T) {
+        let slice = unsafe {
+            core::slice::from_raw_parts(&value as *const _ as *const _, core::mem::size_of::<T>())
+        };
+
+        #[cfg(target_endian = "little")]
+        self.append(slice);
+
+        #[cfg(target_endian = "big")]
+        {
+            let top = slice.len() - 1;
+            for (index, byte) in slice.iter().enumerate() {
+                self.set(top - index, *byte);
+            }
+            self.append_len(slice.len());
+        }
     }
 
     pub fn set(&mut self, index: usize, byte: u8) {
@@ -184,7 +202,7 @@ fn check_command_completed(event: EventType) -> Result<EventType, Error> {
         data,
     } = event
     {
-        let status = data.to_slice()[0];
+        let status = data.as_slice()[0];
         if status != 0 {
             return Err(Error::Failed(status));
         }
@@ -213,7 +231,7 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::Reset).to_slice());
+        self.write_bytes(create_command_data(Command::Reset).as_slice());
         check_command_completed(self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)?)
     }
 
@@ -221,7 +239,7 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).to_slice());
+        self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).as_slice());
         check_command_completed(
             self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
         )
@@ -235,7 +253,7 @@ impl<'a> Ble<'a> {
         Self: Sized,
     {
         self.write_bytes(
-            create_command_data(Command::LeSetAdvertisingParametersCustom(params)).to_slice(),
+            create_command_data(Command::LeSetAdvertisingParametersCustom(params)).as_slice(),
         );
         check_command_completed(
             self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
@@ -246,7 +264,7 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).to_slice());
+        self.write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).as_slice());
         check_command_completed(self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)?)
     }
 
@@ -254,7 +272,7 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).to_slice());
+        self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).as_slice());
         check_command_completed(self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)?)
     }
 
@@ -428,7 +446,7 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::Reset).to_slice())
+            self.write_bytes(create_command_data(Command::Reset).as_slice())
                 .await;
             check_command_completed(
                 self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
@@ -440,7 +458,7 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).to_slice())
+            self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).as_slice())
                 .await;
             check_command_completed(
                 self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
@@ -456,7 +474,7 @@ pub mod asynch {
             Self: Sized,
         {
             self.write_bytes(
-                create_command_data(Command::LeSetAdvertisingParametersCustom(params)).to_slice(),
+                create_command_data(Command::LeSetAdvertisingParametersCustom(params)).as_slice(),
             )
             .await;
             check_command_completed(
@@ -470,7 +488,7 @@ pub mod asynch {
             Self: Sized,
         {
             self.write_bytes(
-                create_command_data(Command::LeSetAdvertisingData { data }).to_slice(),
+                create_command_data(Command::LeSetAdvertisingData { data }).as_slice(),
             )
             .await;
             check_command_completed(
@@ -486,7 +504,7 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).to_slice())
+            self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).as_slice())
                 .await;
             check_command_completed(
                 self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)

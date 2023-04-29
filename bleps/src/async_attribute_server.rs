@@ -11,12 +11,7 @@ use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
     asynch::Ble,
     att::{
-        att_encode_error_response, att_encode_exchange_mtu_response,
-        att_encode_execute_write_response, att_encode_find_information_response,
-        att_encode_prepare_write_response, att_encode_read_blob_response,
-        att_encode_read_by_group_type_response, att_encode_read_by_type_response,
-        att_encode_value_ntf, att_encode_write_response, parse_att, Att, AttErrorCode,
-        AttributeData, AttributePayloadData, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
+        parse_att, Att, AttErrorCode, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
         ATT_FIND_INFORMATION_REQ_OPCODE, ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BLOB_REQ_OPCODE,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
@@ -96,7 +91,7 @@ where
 
     pub async fn update_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error> {
         self.ble
-            .write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).to_slice())
+            .write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).as_slice())
             .await;
         check_command_completed(
             self.ble
@@ -112,7 +107,7 @@ where
                     connection_handle: 0,
                     reason,
                 })
-                .to_slice(),
+                .as_slice(),
             )
             .await;
         Ok(EventType::Unknown)
@@ -203,13 +198,11 @@ where
         notification_data: Option<NotificationData>,
     ) -> Result<WorkResult, AttributeServerError> {
         if let Some(notification_data) = notification_data {
-            let answer = notification_data.data.to_slice();
-            let len = usize::min(MTU as usize - 3, answer.len() as usize);
-            self.write_att(
-                self.src_handle,
-                att_encode_value_ntf(notification_data.handle, &answer[..len]),
-            )
-            .await;
+            let mut answer = notification_data.data;
+            answer.limit_len(MTU as usize - 3);
+            let mut data = Data::new_att_value_ntf(notification_data.handle);
+            data.append(&answer.as_slice());
+            self.write_att(self.src_handle, data).await;
         }
 
         let packet = self.ble.poll().await;
@@ -328,17 +321,14 @@ where
         for att in self.attributes.iter_mut() {
             log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == group_type && att.handle >= start && att.handle <= end {
-                let attribute_list = [AttributeData::new(
+                let mut data = Data::new_att_read_by_group_type_response();
+                log::info!("found! {:x?}", att.handle);
+                data.append_att_read_by_group_type_response(
                     att.handle,
                     att.last_handle_in_group,
-                    Uuid::from(att.value()),
-                )];
-                log::info!("found! {:x?}", attribute_list);
-                self.write_att(
-                    src_handle,
-                    att_encode_read_by_group_type_response(&attribute_list),
-                )
-                .await;
+                    &Uuid::from(att.value()),
+                );
+                self.write_att(src_handle, data).await;
                 return;
             }
         }
@@ -348,7 +338,7 @@ where
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
                 start,
                 AttErrorCode::AttributeNotFound,
@@ -368,28 +358,25 @@ where
         for att in self.attributes.iter_mut() {
             log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
-                let data = match att.data {
-                    AttData::Static(bytes) => Data::new(bytes),
+                let mut data = Data::new_att_read_by_type_response();
+                data.append_value(att.handle);
+
+                match att.data {
+                    AttData::Static(bytes) => data.append(bytes),
                     AttData::Dynamic {
                         ref mut read_function,
                         ..
                     } => {
-                        let mut data = Data::default();
                         if let Some(rf) = read_function {
                             let len = (&mut *rf)(0, data.as_slice_mut());
                             data.append_len(len);
                         }
-                        data
                     }
-                };
+                }
+                data.append_att_read_by_type_response();
 
-                let attribute_list = [AttributePayloadData::new(att.handle, data)];
-                log::info!("found! {:x?}", attribute_list);
-                self.write_att(
-                    src_handle,
-                    att_encode_read_by_type_response(&attribute_list),
-                )
-                .await;
+                log::info!("found! {:x?} {}", att.uuid, att.handle);
+                self.write_att(src_handle, data).await;
                 return;
             }
         }
@@ -398,7 +385,7 @@ where
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_READ_BY_TYPE_REQUEST_OPCODE,
                 start,
                 AttErrorCode::AttributeNotFound,
@@ -408,26 +395,21 @@ where
     }
 
     async fn handle_read_req(&mut self, src_handle: u16, handle: u16) {
-        let mut answer = None;
+        let mut data = Data::new_att_read_response();
+
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                answer = match att.data {
+                match att.data {
                     AttData::Static(bytes) => {
-                        let mut answer = Data::new_read_response();
-                        answer.append(bytes);
-                        Some(answer)
+                        data.append(bytes);
                     }
                     AttData::Dynamic {
                         ref mut read_function,
                         ..
                     } => {
                         if let Some(rf) = read_function {
-                            let mut data = Data::new_read_response();
                             let len = (&mut *rf)(0, data.as_slice_mut());
                             data.append_len(len);
-                            Some(data)
-                        } else {
-                            None
                         }
                     }
                 };
@@ -435,16 +417,16 @@ where
             }
         }
 
-        if let Some(mut answer) = answer {
-            answer.limit_len(MTU as usize);
-            self.write_att(src_handle, answer).await;
+        if data.has_att_read_response_data() {
+            data.limit_len(MTU as usize);
+            self.write_att(src_handle, data).await;
             return;
         }
 
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_READ_REQUEST_OPCODE,
                 handle,
                 AttErrorCode::AttributeNotFound,
@@ -464,7 +446,7 @@ where
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(0, &data.to_slice());
+                            (&mut *wf)(0, &data.as_slice());
                         }
                     }
                 };
@@ -475,7 +457,7 @@ where
         }
 
         if found {
-            self.write_att(src_handle, att_encode_write_response())
+            self.write_att(src_handle, Data::new_att_write_response())
                 .await;
             return;
         }
@@ -483,7 +465,7 @@ where
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_WRITE_REQUEST_OPCODE,
                 handle,
                 AttErrorCode::AttributeNotFound,
@@ -494,7 +476,7 @@ where
 
     async fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
         info!("Requested MTU {}, returning 23", mtu);
-        self.write_att(src_handle, att_encode_exchange_mtu_response(MTU))
+        self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU))
             .await;
         return;
     }
@@ -512,7 +494,7 @@ where
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
                 start,
                 AttErrorCode::AttributeNotFound,
@@ -522,36 +504,20 @@ where
     }
 
     async fn handle_find_information(&mut self, src_handle: u16, start: u16, end: u16) {
-        let mut response_data_type: Option<u8> = None;
-        let mut result_count = 0;
-        let mut result_list: [Option<(u16, Uuid)>; 10] = [None; 10];
+        let mut data = Data::new_att_find_information_response();
 
         for att in self.attributes.iter_mut() {
             log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.handle >= start && att.handle <= end {
-                if response_data_type.is_none() {
-                    response_data_type = Some(att.uuid.get_type());
-                }
-
-                if att.uuid.get_type() == response_data_type.unwrap() {
-                    result_list[result_count] = Some((att.handle, att.uuid));
-                    result_count += 1;
-                } else {
+                if !data.append_att_find_information_response(att.handle, &att.uuid) {
                     break;
                 }
+                log::info!("found! {:x?} {}", att.uuid, att.handle);
             }
         }
 
-        if result_count > 0 {
-            log::info!("found! {:x?}", &result_list[..result_count]);
-            self.write_att(
-                src_handle,
-                att_encode_find_information_response(
-                    response_data_type.unwrap(),
-                    &result_list[..result_count],
-                ),
-            )
-            .await;
+        if data.has_att_find_information_response_data() {
+            self.write_att(src_handle, data).await;
             return;
         }
 
@@ -560,7 +526,7 @@ where
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_FIND_INFORMATION_REQ_OPCODE,
                 start,
                 AttErrorCode::AttributeNotFound,
@@ -576,7 +542,8 @@ where
         offset: u16,
         value: Data,
     ) {
-        let mut found = false;
+        let mut data = Data::new_att_prepare_write_response(handle, offset);
+
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 match att.data {
@@ -586,29 +553,25 @@ where
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(offset, value.to_slice());
+                            (&mut *wf)(offset, value.as_slice());
                         }
                     }
                 };
 
-                found = true;
+                data.append(value.as_slice());
                 break;
             }
         }
 
-        if found {
-            self.write_att(
-                src_handle,
-                att_encode_prepare_write_response(handle, offset, value.to_slice()),
-            )
-            .await;
+        if data.has_att_prepare_write_response_data() {
+            self.write_att(src_handle, data).await;
             return;
         }
 
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_PREPARE_WRITE_REQ_OPCODE,
                 handle,
                 AttErrorCode::AttributeNotFound,
@@ -619,27 +582,24 @@ where
 
     async fn handle_execute_write(&mut self, src_handle: u16, _flags: u8) {
         // for now we don't do anything here
-        self.write_att(src_handle, att_encode_execute_write_response())
+        self.write_att(src_handle, Data::new_att_execute_write_response())
             .await;
     }
 
     async fn handle_read_blob(&mut self, src_handle: u16, handle: u16, offset: u16) {
-        let mut answer = None;
+        let mut data = Data::new_att_read_blob_response();
+
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                answer = match att.data {
-                    AttData::Static(bytes) => Some(Data::new(&bytes[offset as usize..])),
+                match att.data {
+                    AttData::Static(bytes) => data.append(&bytes[offset as usize..]),
                     AttData::Dynamic {
                         ref mut read_function,
                         ..
                     } => {
                         if let Some(rf) = read_function {
-                            let mut data = Data::default();
                             let len = (&mut *rf)(offset, data.as_slice_mut());
                             data.append_len(len);
-                            Some(data)
-                        } else {
-                            None
                         }
                     }
                 };
@@ -647,17 +607,16 @@ where
             }
         }
 
-        if let Some(mut answer) = answer {
-            answer.limit_len(MTU as usize - 1);
-            self.write_att(src_handle, att_encode_read_blob_response(answer))
-                .await;
+        if data.has_att_read_blob_response_data() {
+            data.limit_len(MTU as usize - 1);
+            self.write_att(src_handle, data).await;
             return;
         }
 
         // respond with error
         self.write_att(
             src_handle,
-            att_encode_error_response(
+            Data::new_att_error_response(
                 ATT_READ_BLOB_REQ_OPCODE,
                 handle,
                 AttErrorCode::AttributeNotFound,
@@ -668,10 +627,10 @@ where
 
     async fn write_att(&mut self, handle: u16, data: Data) {
         log::info!("src_handle {}", handle);
-        log::info!("data {:x?}", data.to_slice());
+        log::info!("data {:x?}", data.as_slice());
 
         let res = encode_l2cap(data);
-        log::info!("encoded_l2cap {:x?}", res.to_slice());
+        log::info!("encoded_l2cap {:x?}", res.as_slice());
 
         let res = encode_acl_packet(
             handle,
@@ -679,7 +638,7 @@ where
             HostBroadcastFlag::NoBroadcast,
             res,
         );
-        log::info!("writing {:x?}", res.to_slice());
-        self.ble.write_bytes(res.to_slice()).await;
+        log::info!("writing {:x?}", res.as_slice());
+        self.ble.write_bytes(res.as_slice()).await;
     }
 }

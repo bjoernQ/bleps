@@ -9,12 +9,7 @@ use bleps::{
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
-    att::{
-        att_encode_error_response, att_encode_read_by_group_type_response,
-        att_encode_read_by_type_response, att_encode_read_response, att_encode_write_response,
-        parse_att, Att, AttErrorCode, AttributeData, AttributePayloadData, Uuid,
-        ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
-    },
+    att::{parse_att, Att, AttErrorCode, Uuid, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE},
     attribute_server::{
         AttData, Attribute, AttributeServer, CHARACTERISTIC_UUID16, PRIMARY_SERVICE_UUID16,
     },
@@ -153,7 +148,7 @@ fn parse_event() {
 
     let res = ble.poll();
 
-    assert_matches!(res, Some(PollResult::Event(EventType::CommandComplete { num_packets: 5, opcode: 0x0c03, data})) if data.to_slice() == &[0] );
+    assert_matches!(res, Some(PollResult::Event(EventType::CommandComplete { num_packets: 5, opcode: 0x0c03, data})) if data.as_slice() == &[0] );
 
     connector.reset();
 }
@@ -167,7 +162,7 @@ fn init_works() {
 
     let res = ble.init();
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x0c03, data}) if data.to_slice() == &[0]);
+    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x0c03, data}) if data.as_slice() == &[0]);
 
     assert_eq!(connector.get_write_idx(), 4);
     assert_eq!(connector.get_to_write_at(0), 0x01);
@@ -273,7 +268,7 @@ fn set_advertising_parameters_works() {
 
     let res = ble.cmd_set_le_advertising_parameters();
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x2006, data}) if data.to_slice() == &[0]);
+    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x2006, data}) if data.as_slice() == &[0]);
 }
 
 #[test]
@@ -294,7 +289,7 @@ fn le_set_advertising_data_works() {
 
     let res = ble.cmd_set_le_advertising_data(Data::new(&[1, 2, 3, 4, 5]));
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x2008, data}) if data.to_slice() == &[0]);
+    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x2008, data}) if data.as_slice() == &[0]);
 }
 
 #[test]
@@ -313,7 +308,7 @@ fn le_set_advertise_enable_works() {
 
     let res = ble.cmd_set_le_advertise_enable(false);
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x200a, data}) if data.to_slice() == &[0]);
+    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x200a, data}) if data.as_slice() == &[0]);
 }
 
 #[test]
@@ -334,7 +329,7 @@ fn receiving_async_data_works() {
             boundary_flag: BoundaryFlag::FirstAutoFlushable,
             bc_flag: ControllerBroadcastFlag::PointToPoint,
             data,
-        })) if data.to_slice() == &[0x7, 0x0, 0x4, 0x0, 0x10, 0x1, 0x0, 0xff, 0xff, 0x0, 0x28]
+        })) if data.as_slice() == &[0x7, 0x0, 0x4, 0x0, 0x10, 0x1, 0x0, 0xff, 0xff, 0x0, 0x28]
     );
 }
 
@@ -408,25 +403,21 @@ fn receiving_read_by_group_type_works() {
 
 #[test]
 fn create_read_by_group_type_resp_works() {
-    let attribute_list = [
-        AttributeData::new(0x0001, 0x0010, Uuid::Uuid16(0x1801)),
-        AttributeData::new(0x0020, 0x0030, Uuid::Uuid16(0x1802)),
-    ];
-    let res = att_encode_read_by_group_type_response(&attribute_list);
+    let mut res = Data::new_att_read_by_group_type_response();
+    res.append_att_read_by_group_type_response(0x0001, 0x0010, &Uuid::Uuid16(0x1801));
+    res.append_att_read_by_group_type_response(0x0020, 0x0030, &Uuid::Uuid16(0x1802));
 
     assert_matches!(
-        res.to_slice(),
-        &[0x11, 0x06, 0x01, 0x00, 0x10, 0x00, 0x01, 0x18, 0x20, 0x00, 0x30, 0x00, 0x02, 0x18,]
+        res.as_slice(),
+        [0x11, 0x06, 0x01, 0x00, 0x10, 0x00, 0x01, 0x18, 0x20, 0x00, 0x30, 0x00, 0x02, 0x18]
     );
 }
 
 #[test]
 fn create_read_by_group_type_resp_acl_works() {
-    let attribute_list = [
-        AttributeData::new(0x0001, 0x0010, Uuid::Uuid16(0x1801)),
-        AttributeData::new(0x0020, 0x0030, Uuid::Uuid16(0x1802)),
-    ];
-    let res = att_encode_read_by_group_type_response(&attribute_list);
+    let mut res = Data::new_att_read_by_group_type_response();
+    res.append_att_read_by_group_type_response(0x0001, 0x0010, &Uuid::Uuid16(0x1801));
+    res.append_att_read_by_group_type_response(0x0020, 0x0030, &Uuid::Uuid16(0x1802));
     let res = encode_l2cap(res);
     let res = encode_acl_packet(
         0x0000,
@@ -436,7 +427,7 @@ fn create_read_by_group_type_resp_acl_works() {
     );
 
     assert_matches!(
-        res.to_slice(),
+        res.as_slice(),
         &[
             0x02, 0x00, 0x20, 0x12, 0x00, 0x0e, 0x00, 0x04, 0x00, 0x11, 0x06, 0x01, 0x00, 0x10,
             0x00, 0x01, 0x18, 0x20, 0x00, 0x30, 0x00, 0x02, 0x18,
@@ -446,13 +437,13 @@ fn create_read_by_group_type_resp_acl_works() {
 
 #[test]
 fn create_error_resp_works() {
-    let res = att_encode_error_response(
+    let res = Data::new_att_error_response(
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
         0x1234,
         AttErrorCode::AttributeNotFound,
     );
 
-    assert_matches!(res.to_slice(), &[0x01, 0x10, 0x34, 0x12, 0x0a,]);
+    assert_matches!(res.as_slice(), &[0x01, 0x10, 0x34, 0x12, 0x0a,]);
 }
 
 #[test]
@@ -487,12 +478,14 @@ fn receiving_read_by_type_works() {
 
 #[test]
 fn create_read_by_type_resp_works() {
-    let attribute_list = [AttributePayloadData::new(0x0002, &[1u8, 2u8, 3u8, 4u8])];
-    let res = att_encode_read_by_type_response(&attribute_list);
+    let mut res = Data::new_att_read_by_type_response();
+    res.append_value(0x0002u16);
+    res.append(&[1u8, 2u8, 3u8, 4u8]);
+    res.append_att_read_by_type_response();
 
     assert_matches!(
-        res.to_slice(),
-        &[0x09, 0x06, 0x02, 0x00, 0x01, 0x02, 0x03, 0x04,]
+        res.as_slice(),
+        [0x09, 0x06, 0x02, 0x00, 0x01, 0x02, 0x03, 0x04]
     );
 }
 
@@ -524,9 +517,10 @@ fn receiving_read_works() {
 
 #[test]
 fn create_read_resp_works() {
-    let res = att_encode_read_response(&[0x01, 0x02, 0x03, 0x04]);
+    let mut res = Data::new_att_read_response();
+    res.append(&[0x01, 0x02, 0x03, 0x04]);
 
-    assert_matches!(res.to_slice(), &[0x0b, 0x01, 0x02, 0x03, 0x04,]);
+    assert_matches!(res.as_slice(), &[0x0b, 0x01, 0x02, 0x03, 0x04,]);
 }
 
 #[test]
@@ -549,7 +543,7 @@ fn receiving_write_works() {
                     Ok(Att::WriteReq {
                         handle: 0x03,
                         data
-                    }) if data.to_slice() == &[0xff]
+                    }) if data.as_slice() == &[0xff]
                 )
             }
         },
@@ -559,9 +553,9 @@ fn receiving_write_works() {
 
 #[test]
 fn create_write_resp_works() {
-    let res = att_encode_write_response();
+    let res = Data::new_att_write_response();
 
-    assert_matches!(res.to_slice(), &[0x13]);
+    assert_matches!(res.as_slice(), &[0x13]);
 }
 
 #[test]
@@ -575,7 +569,7 @@ fn create_advertising_data_works() {
     println!("{:x?}", res);
 
     assert_matches!(
-        res.to_slice(),
+        res.as_slice(),
         &[
             0x1c, 0x02, 0x01, 0x06, 0x03, 0x02, 0x09, 0x18, 0x14, 0x09, 0x42, 0x4C, 0x2D, 0x36,
             0x30, 0x32, 0x20, 0x42, 0x6C, 0x65, 0x2D, 0x45, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,
@@ -589,10 +583,16 @@ fn attribute_server_discover_two_services() {
     let connector = connector();
     let mut ble = Ble::new(&connector);
 
-    let mut rf1 = || &[0u8][..];
+    let mut rf1 = |_, data: &mut [u8]| {
+        data[0] = 0;
+        1
+    };
     let mut wf1 = |_, _data: &[u8]| {};
 
-    let mut rf2 = || &[0u8][..];
+    let mut rf2 = |_, data: &mut [u8]| {
+        data[0] = 0;
+        1
+    };
     let mut wf2 = |_, _data: &[u8]| {};
 
     let srv_uuid: [u8; 16] = [
@@ -685,7 +685,7 @@ fn attribute_server_discover_two_services() {
     // check response (1-3, 0x2800)
     let response_data = connector.get_written_data();
     assert_eq!(
-        response_data.to_slice(),
+        response_data.as_slice(),
         &[
             0x02, 0x00, 0x20, 0x1A, 0x00, 0x16, 0x00, 0x04, 0x00, 0x11, 0x14, 0x01, 0x00, 0x03,
             0x00, 0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1,
@@ -703,7 +703,7 @@ fn attribute_server_discover_two_services() {
     // check response (4-6, 0x2800)
     let response_data = connector.get_written_data();
     assert_eq!(
-        response_data.to_slice(),
+        response_data.as_slice(),
         &[
             0x02, 0x00, 0x20, 0x1a, 0x00, 0x16, 0x00, 0x04, 0x00, 0x11, 0x14, 0x04, 0x00, 0x06,
             0x00, 0xC8, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1,
@@ -721,7 +721,7 @@ fn attribute_server_discover_two_services() {
     // check response (not found)
     let response_data = connector.get_written_data();
     assert_eq!(
-        response_data.to_slice(),
+        response_data.as_slice(),
         &[0x02, 0x00, 0x20, 0x09, 0x00, 0x05, 0x00, 0x04, 0x00, 0x01, 0x10, 0x07, 0x00, 0x0a]
     );
 }
