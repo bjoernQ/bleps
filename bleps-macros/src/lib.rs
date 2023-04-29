@@ -283,18 +283,39 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 let char_ccd_data_attr = format_ident!("_char_ccd_data_attr{}{}", i, j);
                 let rfunction = format_ident!("_attr_read{}", current_handle);
                 let wfunction = format_ident!("_attr_write{}", current_handle);
-                decls.push(
-                    quote!(let mut #char_ccd_data_attr = AttData::Dynamic { read_function: Some(&mut #rfunction), write_function: Some(&mut #wfunction)};)
-                );
+                decls.push(quote!(let mut #char_ccd_data_attr = AttData::Dynamic {
+                        read_function: Some(&mut #rfunction),
+                        write_function: Some(&mut #wfunction)
+                    };));
 
                 let backing_data = format_ident!("_attr_data{}", current_handle);
                 pre.push(quote!(
-                    static mut #backing_data: [u8;2] = [0u8;2];
+                    static mut #backing_data: [u8; 2] = [0u8; 2];
 
-                    let mut #rfunction = || unsafe {& #backing_data[..]};
-                    let mut #wfunction = |offset: u16, data: &[u8]| {
+                    let mut #rfunction = |offset: u16, data: &mut [u8]| {
+                        let off = offset as usize;
                         unsafe {
-                            #backing_data.copy_from_slice(data);
+                            if off < #backing_data.len() {
+                                let len = #backing_data.len() - off;
+                                if len > 0 {
+                                    let len = len.min(data.len());
+                                    data[..len].copy_from_slice(&#backing_data[off..off+len]);
+                                    return len;
+                                }
+                            }
+                        }
+                        0
+                    };
+                    let mut #wfunction = |offset: u16, data: &[u8]| {
+                        let off = offset as usize;
+                        unsafe {
+                            if off < #backing_data.len() {
+                                let len = #backing_data.len() - off;
+                                if len > 0 {
+                                    let len = len.min(data.len());
+                                    #backing_data[off..off+len].copy_from_slice(&data[..len]);
+                                }
+                            }
                         }
                     };
                 ));

@@ -323,13 +323,13 @@ impl AttributeData {
 }
 
 #[derive(Debug)]
-pub struct AttributePayloadData<'a> {
+pub struct AttributePayloadData {
     attribute_handle: u16,
-    attribute_value: &'a [u8],
+    attribute_value: Data,
 }
 
-impl<'a> AttributePayloadData<'a> {
-    pub fn new(attribute_handle: u16, attribute_value: &'a [u8]) -> AttributePayloadData<'a> {
+impl AttributePayloadData {
+    pub fn new(attribute_handle: u16, attribute_value: Data) -> AttributePayloadData {
         AttributePayloadData {
             attribute_handle,
             attribute_value,
@@ -342,7 +342,7 @@ impl<'a> AttributePayloadData<'a> {
             (self.attribute_handle & 0xff) as u8,
             ((self.attribute_handle >> 8) & 0xff) as u8,
         ]);
-        data.append(self.attribute_value);
+        data.append(self.attribute_value.to_slice());
         data
     }
 
@@ -392,12 +392,10 @@ pub fn att_encode_read_by_type_response(attribute_list: &[AttributePayloadData])
     data
 }
 
-pub fn att_encode_read_response(payload: &[u8]) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_READ_RESPONSE_OPCODE]);
-    data.append(payload);
-
-    data
+impl Data {
+    pub fn new_read_response() -> Data {
+        Data::new(&[ATT_READ_RESPONSE_OPCODE])
+    }
 }
 
 pub fn att_encode_write_response() -> Data {
@@ -450,10 +448,10 @@ pub fn att_encode_execute_write_response() -> Data {
     data
 }
 
-pub fn att_encode_read_blob_response(payload: &[u8]) -> Data {
+pub fn att_encode_read_blob_response(payload: Data) -> Data {
     let mut data = Data::default();
     data.append(&[ATT_READ_BLOB_RESP_OPCODE]);
-    data.append(payload);
+    data.append(payload.to_slice());
 
     data
 }

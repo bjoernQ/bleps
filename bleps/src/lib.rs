@@ -67,6 +67,28 @@ impl Data {
         &self.data[0..self.len]
     }
 
+    pub fn as_slice_mut(&mut self) -> &mut [u8] {
+        &mut self.data[self.len..]
+    }
+
+    pub fn set_len(&mut self, new_len: usize) {
+        self.len = if new_len > self.data.len() {
+            self.data.len()
+        } else {
+            new_len
+        };
+    }
+
+    pub fn append_len(&mut self, extra_len: usize) {
+        self.set_len(self.len + extra_len);
+    }
+
+    pub fn limit_len(&mut self, max_len: usize) {
+        if self.len > max_len {
+            self.len = max_len;
+        }
+    }
+
     pub fn subdata_from(&self, from: usize) -> Data {
         let mut data = [0u8; 128];
         let new_len = self.len - from;

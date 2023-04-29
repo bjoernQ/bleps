@@ -1,6 +1,10 @@
 // Use with the esp32s3-serial-hci
 
-use std::{process::exit, time::Duration};
+use std::{
+    process::exit,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use bleps::{
     ad_structure::{
@@ -70,16 +74,50 @@ fn main() {
 
         println!("started advertising");
 
-        let mut rf = || &b"Hello BLE! Hello BLE! 01234567890123456789 ABCDEFG abcdefg"[..];
-        let mut wf = |offset: u16, data: &[u8]| {
-            println!("RECEIVED: Offset {}, data {:x?}", offset, data);
+        let val = Arc::new(Mutex::new(Vec::from(
+            &b"Hello BLE! Hello BLE! 01234567890123456789 ABCDEFG abcdefg"[..],
+        )));
+
+        let mut rf = {
+            let val = val.clone();
+            move |offset: u16, data: &mut [u8]| {
+                let val = val.lock().unwrap();
+                let off = offset as usize;
+                if off < val.len() {
+                    let len = data.len().min(val.len() - off);
+                    data[..len].copy_from_slice(&val[off..off + len]);
+                    println!("SEND: Offset {}, data {:x?}", offset, &data[..len]);
+                    len
+                } else {
+                    0
+                }
+            }
+        };
+        let mut wf = {
+            let val = val.clone();
+            move |offset: u16, data: &[u8]| {
+                println!("RECEIVED: Offset {}, data {:x?}", offset, data);
+                let mut val = val.lock().unwrap();
+                let off = offset as usize;
+                if off < val.len() {
+                    let len = val.len() - off;
+                    let olen = data.len().min(len);
+                    val[off..off + olen].copy_from_slice(&data[..olen]);
+                    if data.len() > len {
+                        val.extend_from_slice(&data[olen..]);
+                    }
+                }
+            }
         };
 
         let mut wf2 = |offset: u16, data: &[u8]| {
             println!("RECEIVED2: Offset {}, data {:x?}", offset, data);
         };
 
-        let mut rf3 = || &b"Hola!"[..];
+        let mut rf3 = |offset: u16, data: &mut [u8]| {
+            data[..5].copy_from_slice(&b"Hola!"[..]);
+            5
+        };
         let mut wf3 = |offset: u16, data: &[u8]| {
             println!("RECEIVED3: Offset {}, data {:x?}", offset, data);
         };
@@ -127,9 +165,12 @@ fn main() {
                         }
                         crossterm::event::KeyCode::Char('n') => {
                             println!("notify if enabled");
-                            if let Some(cccd) =
-                                srv.get_characteristic_value(my_characteristic_notify_enable_handle)
-                            {
+                            let mut cccd = [0u8; 1];
+                            if let Some(1) = srv.get_characteristic_value(
+                                my_characteristic_notify_enable_handle,
+                                0,
+                                &mut cccd,
+                            ) {
                                 // if notifications enabled
                                 if cccd[0] == 1 {
                                     response[5] = b'0' + ((response[5] + 1) % 10);
