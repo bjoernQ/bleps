@@ -292,7 +292,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 pre.push(quote!(
                     static mut #backing_data: [u8; 2] = [0u8; 2];
 
-                    let mut #rfunction = |offset: u16, data: &mut [u8]| {
+                    let mut #rfunction = |offset: usize, data: &mut [u8]| {
                         let off = offset as usize;
                         unsafe {
                             if off < #backing_data.len() {
@@ -306,7 +306,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                         }
                         0
                     };
-                    let mut #wfunction = |offset: u16, data: &[u8]| {
+                    let mut #wfunction = |offset: usize, data: &[u8]| {
                         let off = offset as usize;
                         unsafe {
                             if off < #backing_data.len() {

@@ -93,7 +93,7 @@ impl<'a> AttributeServer<'a> {
                 ..
             } => {
                 if let Some(rf) = read_function {
-                    Some((&mut *rf)(offset, buffer))
+                    Some((&mut *rf)(offset as usize, buffer))
                 } else {
                     None
                 }
@@ -467,7 +467,7 @@ impl<'a> AttributeServer<'a> {
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(offset, value.as_slice());
+                            (&mut *wf)(offset as usize, value.as_slice());
                         }
                     }
                 };
@@ -510,7 +510,7 @@ impl<'a> AttributeServer<'a> {
                         ..
                     } => {
                         if let Some(rf) = read_function {
-                            let len = (&mut *rf)(offset, data.as_slice_mut());
+                            let len = (&mut *rf)(offset as usize, data.as_slice_mut());
                             data.append_len(len);
                         }
                     }
@@ -560,8 +560,8 @@ pub const ATT_WRITEABLE: u8 = 0x08;
 pub enum AttData<'a> {
     Static(&'a [u8]),
     Dynamic {
-        read_function: Option<&'a mut dyn FnMut(u16, &mut [u8]) -> usize>,
-        write_function: Option<&'a mut dyn FnMut(u16, &[u8])>,
+        read_function: Option<&'a mut dyn FnMut(usize, &mut [u8]) -> usize>,
+        write_function: Option<&'a mut dyn FnMut(usize, &[u8])>,
     },
 }
 

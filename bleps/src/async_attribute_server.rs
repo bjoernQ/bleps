@@ -81,7 +81,7 @@ where
                 ..
             } => {
                 if let Some(rf) = read_function {
-                    Some((&mut *rf)(offset, buffer))
+                    Some((&mut *rf)(offset as usize, buffer))
                 } else {
                     None
                 }
@@ -553,7 +553,7 @@ where
                         ..
                     } => {
                         if let Some(wf) = write_function {
-                            (&mut *wf)(offset, value.as_slice());
+                            (&mut *wf)(offset as usize, value.as_slice());
                         }
                     }
                 };
@@ -598,7 +598,7 @@ where
                         ..
                     } => {
                         if let Some(rf) = read_function {
-                            let len = (&mut *rf)(offset, data.as_slice_mut());
+                            let len = (&mut *rf)(offset as usize, data.as_slice_mut());
                             data.append_len(len);
                         }
                     }

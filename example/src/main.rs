@@ -80,7 +80,7 @@ fn main() {
 
         let mut rf = {
             let val = val.clone();
-            move |offset: u16, data: &mut [u8]| {
+            move |offset: usize, data: &mut [u8]| {
                 let val = val.lock().unwrap();
                 let off = offset as usize;
                 if off < val.len() {
@@ -95,7 +95,7 @@ fn main() {
         };
         let mut wf = {
             let val = val.clone();
-            move |offset: u16, data: &[u8]| {
+            move |offset: usize, data: &[u8]| {
                 println!("RECEIVED: Offset {}, data {:x?}", offset, data);
                 let mut val = val.lock().unwrap();
                 let off = offset as usize;
@@ -110,15 +110,15 @@ fn main() {
             }
         };
 
-        let mut wf2 = |offset: u16, data: &[u8]| {
+        let mut wf2 = |offset: usize, data: &[u8]| {
             println!("RECEIVED2: Offset {}, data {:x?}", offset, data);
         };
 
-        let mut rf3 = |offset: u16, data: &mut [u8]| {
+        let mut rf3 = |_offset: usize, data: &mut [u8]| {
             data[..5].copy_from_slice(&b"Hola!"[..]);
             5
         };
-        let mut wf3 = |offset: u16, data: &[u8]| {
+        let mut wf3 = |offset: usize, data: &[u8]| {
             println!("RECEIVED3: Offset {}, data {:x?}", offset, data);
         };
 
