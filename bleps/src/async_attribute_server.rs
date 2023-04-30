@@ -5,8 +5,6 @@ use futures::future::Either;
 use futures::pin_mut;
 use log::info;
 
-use crate::attribute_server::AttributeServerError;
-use crate::attribute_server::NotificationData;
 use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
     asynch::Ble,
@@ -16,10 +14,8 @@ use crate::{
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
-    attribute_server::AttData,
-    attribute_server::Attribute,
-    attribute_server::WorkResult,
-    attribute_server::MTU,
+    attribute::Attribute,
+    attribute_server::{AttributeServerError, NotificationData, WorkResult, MTU},
     check_command_completed,
     command::{create_command_data, Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
@@ -69,23 +65,12 @@ where
         offset: u16,
         buffer: &mut [u8],
     ) -> Option<usize> {
-        match self.attributes[handle as usize].data {
-            AttData::Static(data) => {
-                let off = offset as usize;
-                let len = (data.len() - off).min(buffer.len());
-                buffer[..len].copy_from_slice(&data[off..off + len]);
-                Some(len)
-            }
-            AttData::Dynamic {
-                ref mut read_function,
-                ..
-            } => {
-                if let Some(rf) = read_function {
-                    Some((&mut *rf)(offset as usize, buffer))
-                } else {
-                    None
-                }
-            }
+        let att = &mut self.attributes[handle as usize];
+
+        if att.data.readable() {
+            Some(att.data.read(offset as usize, buffer))
+        } else {
+            None
         }
     }
 
@@ -361,17 +346,9 @@ where
                 let mut data = Data::new_att_read_by_type_response();
                 data.append_value(att.handle);
 
-                match att.data {
-                    AttData::Static(bytes) => data.append(bytes),
-                    AttData::Dynamic {
-                        ref mut read_function,
-                        ..
-                    } => {
-                        if let Some(rf) = read_function {
-                            let len = (&mut *rf)(0, data.as_slice_mut());
-                            data.append_len(len);
-                        }
-                    }
+                if att.data.readable() {
+                    let len = att.data.read(0, data.as_slice_mut());
+                    data.append_len(len);
                 }
                 data.append_att_read_by_type_response();
 
@@ -399,20 +376,13 @@ where
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                match att.data {
-                    AttData::Static(bytes) => {
-                        data.append(bytes);
+                if att.handle == handle {
+                    if att.data.readable() {
+                        let len = att.data.read(0, data.as_slice_mut());
+                        data.append_len(len);
                     }
-                    AttData::Dynamic {
-                        ref mut read_function,
-                        ..
-                    } => {
-                        if let Some(rf) = read_function {
-                            let len = (&mut *rf)(0, data.as_slice_mut());
-                            data.append_len(len);
-                        }
-                    }
-                };
+                    break;
+                }
                 break;
             }
         }
@@ -439,18 +409,9 @@ where
         let mut found = false;
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                match att.data {
-                    AttData::Static(_bytes) => (),
-                    AttData::Dynamic {
-                        ref mut write_function,
-                        ..
-                    } => {
-                        if let Some(wf) = write_function {
-                            (&mut *wf)(0, &data.as_slice());
-                        }
-                    }
-                };
-
+                if att.data.writable() {
+                    att.data.write(0, &data.as_slice());
+                }
                 found = true;
                 break;
             }
@@ -546,18 +507,9 @@ where
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                match att.data {
-                    AttData::Static(_bytes) => (),
-                    AttData::Dynamic {
-                        ref mut write_function,
-                        ..
-                    } => {
-                        if let Some(wf) = write_function {
-                            (&mut *wf)(offset as usize, value.as_slice());
-                        }
-                    }
-                };
-
+                if att.data.writable() {
+                    att.data.write(offset as usize, value.as_slice());
+                }
                 data.append(value.as_slice());
                 break;
             }
@@ -591,18 +543,10 @@ where
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                match att.data {
-                    AttData::Static(bytes) => data.append(&bytes[offset as usize..]),
-                    AttData::Dynamic {
-                        ref mut read_function,
-                        ..
-                    } => {
-                        if let Some(rf) = read_function {
-                            let len = (&mut *rf)(offset as usize, data.as_slice_mut());
-                            data.append_len(len);
-                        }
-                    }
-                };
+                if att.data.readable() {
+                    let len = att.data.read(offset as usize, data.as_slice_mut());
+                    data.append_len(len);
+                }
                 break;
             }
         }

@@ -10,9 +10,8 @@ use bleps::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
     att::{parse_att, Att, AttErrorCode, Uuid, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE},
-    attribute_server::{
-        AttData, Attribute, AttributeServer, CHARACTERISTIC_UUID16, PRIMARY_SERVICE_UUID16,
-    },
+    attribute::Attribute,
+    attribute_server::{AttributeServer, CHARACTERISTIC_UUID16, PRIMARY_SERVICE_UUID16},
     command::{create_command_data, Command, CommandHeader},
     event::{ErrorCode, EventType},
     l2cap::{encode_l2cap, parse_l2cap},
@@ -583,23 +582,23 @@ fn attribute_server_discover_two_services() {
     let connector = connector();
     let mut ble = Ble::new(&connector);
 
-    let mut rf1 = |_, data: &mut [u8]| {
+    let mut rf1 = |_offset: usize, data: &mut [u8]| -> usize {
         data[0] = 0;
         1
     };
-    let mut wf1 = |_, _data: &[u8]| {};
+    let mut wf1 = |_offset: usize, _data: &[u8]| {};
 
-    let mut rf2 = |_, data: &mut [u8]| {
+    let mut rf2 = |_offset: usize, data: &mut [u8]| -> usize {
         data[0] = 0;
         1
     };
-    let mut wf2 = |_, _data: &[u8]| {};
+    let mut wf2 = |_offset: usize, _data: &[u8]| {};
 
     let srv_uuid: [u8; 16] = [
         0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
         0xA8,
     ];
-    let mut srv_uuid_att_data = AttData::Static(&srv_uuid);
+    let mut srv_uuid_att_data = &srv_uuid[..];
     let primaray_srv = Attribute::new(PRIMARY_SERVICE_UUID16, &mut srv_uuid_att_data);
 
     let char_data = [
@@ -608,13 +607,10 @@ fn attribute_server_discover_two_services() {
         0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
         0xA8, // 128 bit UUID like above
     ];
-    let mut char_att_data = AttData::Static(&char_data);
+    let mut char_att_data = &char_data;
     let char = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data);
 
-    let mut custom_char_att_data = AttData::Dynamic {
-        read_function: Some(&mut rf1),
-        write_function: Some(&mut wf1),
-    };
+    let mut custom_char_att_data = (&mut rf1, &mut wf1);
     let custom_char_att_data_attr = Attribute::new(
         Uuid::Uuid128([
             0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
@@ -627,7 +623,7 @@ fn attribute_server_discover_two_services() {
         0xC8, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62, 0x6A,
         0xA8,
     ];
-    let mut srv_uuid_att_data2 = AttData::Static(&srv_uuid2);
+    let mut srv_uuid_att_data2 = &srv_uuid2[..];
     let primaray_srv2 = Attribute::new(PRIMARY_SERVICE_UUID16, &mut srv_uuid_att_data2);
 
     let char_data2 = [
@@ -651,13 +647,10 @@ fn attribute_server_discover_two_services() {
         0x6A,
         0xA8, // 128 bit UUID like above
     ];
-    let mut char_att_data2 = AttData::Static(&char_data2);
+    let mut char_att_data2 = &char_data2;
     let char2 = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data2);
 
-    let mut custom_char_att_data2 = AttData::Dynamic {
-        read_function: Some(&mut rf2),
-        write_function: Some(&mut wf2),
-    };
+    let mut custom_char_att_data2 = (&mut rf2, &mut wf2);
     let custom_char_att_data_attr2 = Attribute::new(
         Uuid::Uuid128([
             0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
@@ -666,6 +659,9 @@ fn attribute_server_discover_two_services() {
         &mut custom_char_att_data2,
     );
 
+    let mut val_att_data = &(32u32,);
+    let val = Attribute::new(CHARACTERISTIC_UUID16, &mut val_att_data);
+
     let attributes = &mut [
         primaray_srv,
         char,
@@ -673,6 +669,7 @@ fn attribute_server_discover_two_services() {
         primaray_srv2,
         char2,
         custom_char_att_data_attr2,
+        val,
     ];
     let mut srv = AttributeServer::new(&mut ble, attributes);
 
@@ -705,7 +702,7 @@ fn attribute_server_discover_two_services() {
     assert_eq!(
         response_data.as_slice(),
         &[
-            0x02, 0x00, 0x20, 0x1a, 0x00, 0x16, 0x00, 0x04, 0x00, 0x11, 0x14, 0x04, 0x00, 0x06,
+            0x02, 0x00, 0x20, 0x1a, 0x00, 0x16, 0x00, 0x04, 0x00, 0x11, 0x14, 0x04, 0x00, 0x07,
             0x00, 0xC8, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1,
             0x62, 0x6A, 0xA8,
         ]

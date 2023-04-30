@@ -22,6 +22,7 @@ pub mod event;
 
 pub mod ad_structure;
 
+pub mod attribute;
 pub mod attribute_server;
 
 #[cfg(feature = "async")]
