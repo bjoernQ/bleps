@@ -1,5 +1,3 @@
-use log::info;
-
 use crate::{read_to_data, Data, HciConnection};
 
 #[derive(Debug)]
@@ -114,7 +112,7 @@ pub fn parse_event(connector: &dyn HciConnection) -> EventType {
             }
         }
         _ => {
-            info!(
+            log::warn!(
                 "Ignoring unknown event {:02x} data = {:02x?}",
                 event.code,
                 event.data.as_slice()
@@ -176,7 +174,7 @@ where
             }
         }
         _ => {
-            info!(
+            log::warn!(
                 "Ignoring unknown event {:02x} data = {:02x?}",
                 event.code,
                 event.data.as_slice()

@@ -3,7 +3,6 @@ use core::cell::RefCell;
 use critical_section::Mutex;
 use futures::future::Either;
 use futures::pin_mut;
-use log::info;
 
 use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
@@ -193,7 +192,7 @@ where
         let packet = self.ble.poll().await;
 
         if packet.is_some() {
-            info!("polled: {:?}", packet);
+            log::trace!("polled: {:?}", packet);
         }
 
         match packet {
@@ -214,7 +213,7 @@ where
                 crate::PollResult::AsyncData(packet) => {
                     let (src_handle, l2cap_packet) = parse_l2cap(packet)?;
                     let packet = parse_att(l2cap_packet)?;
-                    info!("att: {:x?}", packet);
+                    log::trace!("att: {:x?}", packet);
                     match packet {
                         Att::ReadByGroupTypeReq {
                             start,
@@ -304,10 +303,10 @@ where
     ) {
         // TODO respond with all finds - not just one
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == group_type && att.handle >= start && att.handle <= end {
                 let mut data = Data::new_att_read_by_group_type_response();
-                log::info!("found! {:x?}", att.handle);
+                log::debug!("found! {:x?}", att.handle);
                 data.append_att_read_by_group_type_response(
                     att.handle,
                     att.last_handle_in_group,
@@ -318,7 +317,7 @@ where
             }
         }
 
-        log::info!("not found");
+        log::debug!("not found");
 
         // respond with error
         self.write_att(
@@ -341,7 +340,7 @@ where
     ) {
         // TODO respond with all finds - not just one
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
                 let mut data = Data::new_att_read_by_type_response();
                 data.append_value(att.handle);
@@ -352,13 +351,13 @@ where
                 }
                 data.append_att_read_by_type_response();
 
-                log::info!("found! {:x?} {}", att.uuid, att.handle);
+                log::debug!("found! {:x?} {}", att.uuid, att.handle);
                 self.write_att(src_handle, data).await;
                 return;
             }
         }
 
-        log::info!("not found");
+        log::debug!("not found");
         // respond with error
         self.write_att(
             src_handle,
@@ -436,7 +435,7 @@ where
     }
 
     async fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
-        info!("Requested MTU {}, returning 23", mtu);
+        log::debug!("Requested MTU {}, returning 23", mtu);
         self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU))
             .await;
         return;
@@ -468,12 +467,12 @@ where
         let mut data = Data::new_att_find_information_response();
 
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.handle >= start && att.handle <= end {
                 if !data.append_att_find_information_response(att.handle, &att.uuid) {
                     break;
                 }
-                log::info!("found! {:x?} {}", att.uuid, att.handle);
+                log::debug!("found! {:x?} {}", att.uuid, att.handle);
             }
         }
 
@@ -482,7 +481,7 @@ where
             return;
         }
 
-        log::info!("not found");
+        log::debug!("not found");
 
         // respond with error
         self.write_att(
@@ -570,11 +569,11 @@ where
     }
 
     async fn write_att(&mut self, handle: u16, data: Data) {
-        log::info!("src_handle {}", handle);
-        log::info!("data {:x?}", data.as_slice());
+        log::debug!("src_handle {}", handle);
+        log::debug!("data {:x?}", data.as_slice());
 
         let res = encode_l2cap(data);
-        log::info!("encoded_l2cap {:x?}", res.as_slice());
+        log::trace!("encoded_l2cap {:x?}", res.as_slice());
 
         let res = encode_acl_packet(
             handle,
@@ -582,7 +581,7 @@ where
             HostBroadcastFlag::NoBroadcast,
             res,
         );
-        log::info!("writing {:x?}", res.as_slice());
+        log::trace!("writing {:x?}", res.as_slice());
         self.ble.write_bytes(res.as_slice()).await;
     }
 }

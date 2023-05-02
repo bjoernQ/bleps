@@ -1,5 +1,3 @@
-use log::info;
-
 use crate::{
     acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
     att::{
@@ -130,7 +128,7 @@ impl<'a> AttributeServer<'a> {
         let packet = self.ble.poll();
 
         if packet.is_some() {
-            info!("polled: {:?}", packet);
+            log::trace!("polled: {:?}", packet);
         }
 
         match packet {
@@ -151,7 +149,7 @@ impl<'a> AttributeServer<'a> {
                 crate::PollResult::AsyncData(packet) => {
                     let (src_handle, l2cap_packet) = parse_l2cap(packet)?;
                     let packet = parse_att(l2cap_packet)?;
-                    info!("att: {:x?}", packet);
+                    log::trace!("att: {:x?}", packet);
                     match packet {
                         Att::ReadByGroupTypeReq {
                             start,
@@ -236,10 +234,10 @@ impl<'a> AttributeServer<'a> {
     ) {
         // TODO respond with all finds - not just one
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == group_type && att.handle >= start && att.handle <= end {
                 let mut data = Data::new_att_read_by_group_type_response();
-                log::info!("found! {:x?}", att.handle);
+                log::debug!("found! {:x?}", att.handle);
                 data.append_att_read_by_group_type_response(
                     att.handle,
                     att.last_handle_in_group,
@@ -250,7 +248,7 @@ impl<'a> AttributeServer<'a> {
             }
         }
 
-        log::info!("not found");
+        log::debug!("not found");
 
         // respond with error
         self.write_att(
@@ -272,7 +270,7 @@ impl<'a> AttributeServer<'a> {
     ) {
         // TODO respond with all finds - not just one
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
                 let mut data = Data::new_att_read_by_type_response();
                 data.append_value(att.handle);
@@ -283,13 +281,13 @@ impl<'a> AttributeServer<'a> {
                 }
                 data.append_att_read_by_type_response();
 
-                log::info!("found! {:x?} {}", att.uuid, att.handle);
+                log::debug!("found! {:x?} {}", att.uuid, att.handle);
                 self.write_att(src_handle, data);
                 return;
             }
         }
 
-        log::info!("not found");
+        log::debug!("not found");
         // respond with error
         self.write_att(
             src_handle,
@@ -360,7 +358,7 @@ impl<'a> AttributeServer<'a> {
     }
 
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
-        info!("Requested MTU {}, returning 23", mtu);
+        log::debug!("Requested MTU {}, returning 23", mtu);
         self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU));
         return;
     }
@@ -390,13 +388,13 @@ impl<'a> AttributeServer<'a> {
         let mut data = Data::new_att_find_information_response();
 
         for att in self.attributes.iter_mut() {
-            log::info!("Check attribute {:x?} {}", att.uuid, att.handle);
+            log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.handle >= start && att.handle <= end {
                 if att.handle >= start && att.handle <= end {
                     if !data.append_att_find_information_response(att.handle, &att.uuid) {
                         break;
                     }
-                    log::info!("found! {:x?} {}", att.uuid, att.handle);
+                    log::debug!("found! {:x?} {}", att.uuid, att.handle);
                 }
             }
         }
@@ -406,7 +404,7 @@ impl<'a> AttributeServer<'a> {
             return;
         }
 
-        log::info!("not found");
+        log::debug!("not found");
 
         // respond with error
         self.write_att(
@@ -484,11 +482,11 @@ impl<'a> AttributeServer<'a> {
     }
 
     fn write_att(&mut self, handle: u16, data: Data) {
-        log::info!("src_handle {}", handle);
-        log::info!("data {:x?}", data.as_slice());
+        log::debug!("src_handle {}", handle);
+        log::debug!("data {:x?}", data.as_slice());
 
         let res = encode_l2cap(data);
-        log::info!("encoded_l2cap {:x?}", res.as_slice());
+        log::trace!("encoded_l2cap {:x?}", res.as_slice());
 
         let res = encode_acl_packet(
             handle,
@@ -496,7 +494,7 @@ impl<'a> AttributeServer<'a> {
             HostBroadcastFlag::NoBroadcast,
             res,
         );
-        log::info!("writing {:x?}", res.as_slice());
+        log::trace!("writing {:x?}", res.as_slice());
         self.ble.write_bytes(res.as_slice());
     }
 }
