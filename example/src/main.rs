@@ -7,9 +7,8 @@ use bleps::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
     attribute_server::{AttributeServer, NotificationData, WorkResult},
-    Ble, HciConnector,
+    gatt, Ble, HciConnector,
 };
-use bleps_macros::gatt;
 use embedded_io::{
     blocking::{Read, Write},
     Error, Io,

@@ -27,6 +27,9 @@ pub mod attribute_server;
 #[cfg(feature = "async")]
 pub mod async_attribute_server;
 
+#[cfg(feature = "macros")]
+pub use bleps_macros::gatt;
+
 use command::CONTROLLER_OGF;
 use command::RESET_OCF;
 
