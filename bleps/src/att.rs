@@ -31,22 +31,20 @@ pub enum Uuid {
     Uuid128([u8; 16]),
 }
 
-impl Uuid {
-    pub(crate) fn encode(&self) -> Data {
-        let mut data = Data::default();
-
-        match self {
+impl Data {
+    pub fn append_uuid(&mut self, uuid: &Uuid) {
+        match uuid {
             Uuid::Uuid16(uuid) => {
-                data.append(&[(uuid & 0xff) as u8, ((uuid >> 8) & 0xff) as u8]);
+                self.append_value(*uuid);
             }
             Uuid::Uuid128(uuid) => {
-                let bytes = uuid.clone();
-                data.append(&bytes);
+                self.append(&uuid[..]);
             }
         }
-        data
     }
+}
 
+impl Uuid {
     pub fn bytes(&self, data: &mut [u8]) {
         match self {
             Uuid::Uuid16(uuid) => data.copy_from_slice(&uuid.to_be_bytes()),
@@ -60,14 +58,21 @@ impl Uuid {
             Uuid::Uuid128(_) => 0x02,
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Uuid::Uuid16(_) => 6,
+            Uuid::Uuid128(_) => 20,
+        }
+    }
 }
 
 impl From<Data> for Uuid {
     fn from(data: Data) -> Self {
         match data.len() {
-            2 => Uuid::Uuid16(u16::from_le_bytes(data.to_slice().try_into().unwrap())),
+            2 => Uuid::Uuid16(u16::from_le_bytes(data.as_slice().try_into().unwrap())),
             16 => {
-                let bytes: [u8; 16] = data.to_slice().try_into().unwrap();
+                let bytes: [u8; 16] = data.as_slice().try_into().unwrap();
                 Uuid::Uuid128(bytes)
             }
             _ => panic!(),
@@ -180,8 +185,8 @@ pub enum AttParseError {
 }
 
 pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
-    let opcode = packet.payload.to_slice()[0];
-    let payload = &packet.payload.to_slice()[1..];
+    let opcode = packet.payload.as_slice()[0];
+    let payload = &packet.payload.as_slice()[1..];
 
     match opcode {
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE => {
@@ -202,7 +207,7 @@ pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
             Ok(Att::ReadByGroupTypeReq {
                 start: start_handle,
                 end: end_handle,
-                group_type: group_type,
+                group_type,
             })
         }
         ATT_READ_BY_TYPE_REQUEST_OPCODE => {
@@ -287,182 +292,138 @@ pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
     }
 }
 
-#[derive(Debug)]
-pub struct AttributeData {
-    attribute_handle: u16,
-    end_group_handle: u16,
-    attribute_value: Uuid,
-}
-
-impl AttributeData {
-    pub fn new(
+impl Data {
+    pub fn append_attribute_data(
+        &mut self,
         attribute_handle: u16,
         end_group_handle: u16,
-        attribute_value: Uuid,
-    ) -> AttributeData {
-        AttributeData {
-            attribute_handle,
-            end_group_handle,
-            attribute_value,
+        attribute_value: &Uuid,
+    ) {
+        self.append_value(attribute_handle);
+        self.append_value(end_group_handle);
+        self.append_uuid(attribute_value);
+    }
+
+    pub fn new_att_read_by_group_type_response() -> Self {
+        Self::new(&[
+            ATT_READ_BY_GROUP_TYPE_RESPONSE_OPCODE,
+            0u8, /* size to modify/check later */
+        ])
+    }
+
+    pub fn append_att_read_by_group_type_response(
+        &mut self,
+        attribute_handle: u16,
+        end_group_handle: u16,
+        attribute_value: &Uuid,
+    ) {
+        let len = attribute_value.len() as u8;
+        if self.data[1] == 0 {
+            self.data[1] = len;
+        } else if self.data[1] != len {
+            panic!("Non-uniform UUIDs");
         }
+        self.append_attribute_data(attribute_handle, end_group_handle, attribute_value);
     }
 
-    pub fn encode(&self) -> Data {
-        let mut data = Data::default();
-        data.append(&[
-            (self.attribute_handle & 0xff) as u8,
-            ((self.attribute_handle >> 8) & 0xff) as u8,
-        ]);
-        data.append(&[
-            (self.end_group_handle & 0xff) as u8,
-            ((self.end_group_handle >> 8) & 0xff) as u8,
-        ]);
-        data.append(self.attribute_value.encode().to_slice());
-        data
-    }
-}
-
-#[derive(Debug)]
-pub struct AttributePayloadData<'a> {
-    attribute_handle: u16,
-    attribute_value: &'a [u8],
-}
-
-impl<'a> AttributePayloadData<'a> {
-    pub fn new(attribute_handle: u16, attribute_value: &'a [u8]) -> AttributePayloadData<'a> {
-        AttributePayloadData {
-            attribute_handle,
-            attribute_value,
-        }
-    }
-
-    pub fn encode(&self) -> Data {
-        let mut data = Data::default();
-        data.append(&[
-            (self.attribute_handle & 0xff) as u8,
-            ((self.attribute_handle >> 8) & 0xff) as u8,
-        ]);
-        data.append(self.attribute_value);
+    pub fn new_att_error_response(opcode: u8, handle: u16, code: AttErrorCode) -> Self {
+        let mut data = Self::new(&[ATT_ERROR_RESPONSE_OPCODE, opcode]);
+        data.append_value(handle);
+        data.append_value(code as u8);
         data
     }
 
-    pub fn len(&self) -> usize {
-        2 + self.attribute_value.len()
-    }
-}
-
-pub fn att_encode_read_by_group_type_response(attribute_list: &[AttributeData]) -> Data {
-    let attribute_data_size = match attribute_list[0].attribute_value {
-        Uuid::Uuid16(_) => 6,
-        Uuid::Uuid128(_) => 20,
-    };
-
-    let mut data = Data::default();
-    data.append(&[ATT_READ_BY_GROUP_TYPE_RESPONSE_OPCODE]);
-    data.append(&[attribute_data_size]);
-
-    for att_data in attribute_list {
-        data.append(att_data.encode().to_slice());
+    pub fn new_att_read_by_type_response() -> Self {
+        Self::new(&[
+            ATT_READ_BY_TYPE_RESPONSE_OPCODE,
+            0u8, /* size to set/check later */
+        ])
     }
 
-    data
-}
-
-pub fn att_encode_error_response(opcode: u8, handle: u16, code: AttErrorCode) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_ERROR_RESPONSE_OPCODE]);
-    data.append(&[opcode]);
-    data.append(&[(handle & 0xff) as u8, ((handle >> 8) & 0xff) as u8]);
-    data.append(&[code as u8]);
-
-    data
-}
-
-pub fn att_encode_read_by_type_response(attribute_list: &[AttributePayloadData]) -> Data {
-    let attribute_data_size = attribute_list[0].len(); // check if empty
-
-    let mut data = Data::default();
-    data.append(&[ATT_READ_BY_TYPE_RESPONSE_OPCODE]);
-    data.append(&[attribute_data_size as u8]);
-
-    for att_data in attribute_list {
-        data.append(att_data.encode().to_slice());
+    pub fn append_att_read_by_type_response(&mut self) {
+        let size = self.len() - 2;
+        // check if empty
+        if size == 0 {
+            panic!("Missing attribute payloads");
+        }
+        if self.data[1] == 0 {
+            /* set size */
+            self.data[1] = size as u8;
+        } else {
+            if size % self.data[1] as usize > 0 {
+                panic!("Non-uniform attribute payloads");
+            }
+        }
     }
 
-    data
-}
-
-pub fn att_encode_read_response(payload: &[u8]) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_READ_RESPONSE_OPCODE]);
-    data.append(payload);
-
-    data
-}
-
-pub fn att_encode_write_response() -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_WRITE_RESPONSE_OPCODE]);
-
-    data
-}
-
-pub fn att_encode_exchange_mtu_response(mtu: u16) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_EXCHANGE_MTU_RESPONSE_OPCODE]);
-    data.append(&[(mtu & 0xff) as u8, ((mtu >> 8) & 0xff) as u8]);
-
-    data
-}
-
-pub fn att_encode_find_information_response(uuid_type: u8, list: &[Option<(u16, Uuid)>]) -> Data {
-    let mut data = Data::default();
-
-    data.append(&[ATT_FIND_INFORMATION_RSP_OPCODE]);
-    data.append(&[uuid_type]);
-
-    for element in list {
-        let (handle, uuid) = element.unwrap();
-        data.append(&handle.to_le_bytes());
-        let uuid_bytes = uuid.encode();
-        data.append(uuid_bytes.to_slice());
+    pub fn new_att_read_response() -> Self {
+        Self::new(&[ATT_READ_RESPONSE_OPCODE])
     }
 
-    data
-}
+    pub fn has_att_read_response_data(&self) -> bool {
+        self.len() > 1
+    }
 
-pub fn att_encode_prepare_write_response(handle: u16, offset: u16, payload: &[u8]) -> Data {
-    let mut data = Data::default();
+    pub fn new_att_write_response() -> Self {
+        Self::new(&[ATT_WRITE_RESPONSE_OPCODE])
+    }
 
-    data.append(&[ATT_PREPARE_WRITE_RESP_OPCODE]);
-    data.append(&handle.to_le_bytes());
-    data.append(&offset.to_le_bytes());
-    data.append(payload);
+    pub fn new_att_exchange_mtu_response(mtu: u16) -> Self {
+        let mut data = Self::new(&[ATT_EXCHANGE_MTU_RESPONSE_OPCODE]);
+        data.append_value(mtu);
+        data
+    }
 
-    data
-}
+    pub fn new_att_find_information_response() -> Self {
+        Self::new(&[
+            ATT_FIND_INFORMATION_RSP_OPCODE,
+            0u8, /* uuid_type to set/check later */
+        ])
+    }
 
-pub fn att_encode_execute_write_response() -> Data {
-    let mut data = Data::default();
+    pub fn append_att_find_information_response(&mut self, handle: u16, uuid: &Uuid) -> bool {
+        if self.data[1] == 0 {
+            self.data[1] = uuid.get_type();
+        } else if self.data[1] != uuid.get_type() {
+            return false;
+        }
 
-    data.append(&[ATT_EXECUTE_WRITE_RESP_OPCODE]);
+        self.append_value(handle);
+        self.append_uuid(&uuid);
 
-    data
-}
+        true
+    }
 
-pub fn att_encode_read_blob_response(payload: &[u8]) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_READ_BLOB_RESP_OPCODE]);
-    data.append(payload);
+    pub fn has_att_find_information_response_data(&self) -> bool {
+        self.len() > 2
+    }
 
-    data
-}
+    pub fn new_att_prepare_write_response(handle: u16, offset: u16) -> Self {
+        let mut data = Self::new(&[ATT_PREPARE_WRITE_RESP_OPCODE]);
+        data.append_value(handle);
+        data.append_value(offset);
+        data
+    }
 
-pub fn att_encode_value_ntf(handle: u16, payload: &[u8]) -> Data {
-    let mut data = Data::default();
-    data.append(&[ATT_HANDLE_VALUE_NTF_OPTCODE]);
-    data.append(&handle.to_le_bytes());
-    data.append(payload);
+    pub fn has_att_prepare_write_response_data(&self) -> bool {
+        self.len() > 5
+    }
 
-    data
+    pub fn new_att_execute_write_response() -> Self {
+        Self::new(&[ATT_EXECUTE_WRITE_RESP_OPCODE])
+    }
+
+    pub fn new_att_read_blob_response() -> Self {
+        Self::new(&[ATT_READ_BLOB_RESP_OPCODE])
+    }
+
+    pub fn has_att_read_blob_response_data(&self) -> bool {
+        self.len() > 1
+    }
+
+    pub fn new_att_value_ntf(handle: u16) -> Self {
+        let mut data = Self::new(&[ATT_HANDLE_VALUE_NTF_OPTCODE]);
+        data.append_value(handle);
+        data
+    }
 }

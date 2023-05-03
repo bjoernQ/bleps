@@ -61,10 +61,10 @@ pub fn parse_acl_packet(connector: &dyn HciConnection) -> AclPacket {
     let data = read_to_data(connector, len as usize);
 
     AclPacket {
-        handle: handle,
+        handle,
         boundary_flag: pb,
         bc_flag: bc,
-        data: data,
+        data,
     }
 }
 
@@ -103,10 +103,10 @@ where
     let data = crate::asynch::read_to_data(connector, len as usize).await;
 
     AclPacket {
-        handle: handle,
+        handle,
         boundary_flag: pb,
         bc_flag: bc,
-        data: data,
+        data,
     }
 }
 
@@ -142,7 +142,7 @@ pub fn encode_acl_packet(
     let len = payload.len;
     data.append(&[(len & 0xff) as u8, ((len >> 8) & 0xff) as u8]);
 
-    data.append(payload.to_slice());
+    data.append(payload.as_slice());
 
     data
 }

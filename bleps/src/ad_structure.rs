@@ -50,23 +50,22 @@ pub enum AdStructure<'a> {
     },
 }
 
-impl<'a> AdStructure<'a> {
-    pub fn encode(&self) -> Data {
-        let mut data = Data::default();
-        match self {
+impl Data {
+    pub fn append_ad_structure(&mut self, src: &AdStructure) {
+        match src {
             AdStructure::Flags(flags) => {
-                data.append(&[0x02, 0x01, *flags]);
+                self.append(&[0x02, 0x01, *flags]);
             }
             AdStructure::ServiceUuids16(uuids) => {
-                data.append(&[(uuids.len() * 2 + 1) as u8, 0x02]);
+                self.append(&[(uuids.len() * 2 + 1) as u8, 0x02]);
                 for uuid in uuids.iter() {
-                    data.append(uuid.encode().to_slice());
+                    self.append_uuid(uuid);
                 }
             }
             AdStructure::ServiceUuids128(uuids) => {
-                data.append(&[(uuids.len() * 16 + 1) as u8, 0x07]);
+                self.append(&[(uuids.len() * 16 + 1) as u8, 0x07]);
                 for uuid in uuids.iter() {
-                    data.append(uuid.encode().to_slice());
+                    self.append_uuid(uuid);
                 }
             }
             AdStructure::ServiceData16 { uuid, data } => todo!(
@@ -75,8 +74,8 @@ impl<'a> AdStructure<'a> {
                 data
             ),
             AdStructure::CompleteLocalName(name) => {
-                data.append(&[(name.len() + 1) as u8, 0x09]);
-                data.append(name.as_bytes());
+                self.append(&[(name.len() + 1) as u8, 0x09]);
+                self.append(name.as_bytes());
             }
             AdStructure::ShortenedLocalName(_) => todo!(),
             AdStructure::ManufacturerSpecificData {
@@ -89,8 +88,6 @@ impl<'a> AdStructure<'a> {
             ),
             AdStructure::Unknown { ty, data } => todo!("Unimplemented {:?} {:?}", ty, data),
         }
-
-        data
     }
 }
 
@@ -99,7 +96,7 @@ pub fn create_advertising_data(ad: &[AdStructure]) -> Data {
     data.append(&[0]);
 
     for item in ad.iter() {
-        data.append(item.encode().to_slice());
+        data.append_ad_structure(&item);
     }
 
     let len = data.len - 1;

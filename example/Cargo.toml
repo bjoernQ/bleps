@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 serialport = "4.2.0"
-embedded-io = { version = "0.3.1", features = ["std"] }
+critical-section = "1.1.1"
+embedded-io = { version = "0.4.0", features = ["std"] }
 bleps = { path = "../bleps", features = ["macros"] }
 env_logger = "0.10.0"
 crossterm = "0.25.0"

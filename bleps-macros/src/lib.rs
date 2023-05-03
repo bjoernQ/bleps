@@ -6,15 +6,23 @@ use syn::{parse_macro_input, Expr, Lit, Member, Path};
 ///
 /// ```no-execute
 /// gatt!([
-/// service {
-///     uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
-///     characteristics: [
-///         characteristic {
-///              uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
-///              read: my_read_function,
-///              write: my_write_function,
-///         },
-///     ],
+///     service {
+///         uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+///         characteristics: [
+///             characteristic {
+///                 uuid: "ed5a3953-8ea8-4e0c-9675-044de805a719",
+///                 read: my_read_function,
+///                 write: my_write_function,
+///                 name: "characteristic1",
+///                 description: "Characteristic accessible via functions",
+///             },
+///             characteristic {
+///                 uuid: "96c05dff-2ff0-4080-ab41-f4d24bc6da85",
+///                 value: my_data,
+///                 name: "characteristic2",
+///                 description: "Characteristic with value which implements AttData",
+///             },
+///         ],
 ///     },
 /// ]);
 /// ```
@@ -32,10 +40,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     return quote! { compile_error!("Unexpected"); }.into();
                 }
 
-                let mut service = Service {
-                    uuid: String::new(),
-                    characteristics: Vec::new(),
-                };
+                let mut service = Service::default();
 
                 for field in s.fields {
                     let name = if let Member::Named(name) = field.member {
@@ -64,14 +69,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                             return quote! { compile_error!("Unexpected"); }.into();
                                         }
 
-                                        let mut charact = Characteristic {
-                                            uuid: String::new(),
-                                            read: None,
-                                            write: None,
-                                            description: None,
-                                            notify: false,
-                                            name: None,
-                                        };
+                                        let mut charact = Characteristic::default();
 
                                         for field in s.fields {
                                             let name = if let Member::Named(name) = field.member {
@@ -89,6 +87,22 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         } else {
                                                             return quote!{ compile_error!("Unexpected"); }.into();
                                                         }
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "data" => {
+                                                    if let Expr::Path(p) = field.expr {
+                                                        let name = path_to_string(p.path);
+                                                        charact.data = Some(name);
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
+                                                "value" => {
+                                                    if let Expr::Path(p) = field.expr {
+                                                        let name = path_to_string(p.path);
+                                                        charact.value = Some(name);
                                                     } else {
                                                         return quote!{ compile_error!("Unexpected"); }.into();
                                                     }
@@ -180,7 +194,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
         decls.push(quote!(let #uuid_ident = [ #(#uuid_bytes),* ] ;));
 
         let uuid_data = format_ident!("_uuid_data{}", i);
-        decls.push(quote!(let mut #uuid_data = AttData::Static(&#uuid_ident);));
+        decls.push(quote!(let mut #uuid_data = &#uuid_ident;));
 
         let primary_service_ident = format_ident!("_primary_srv{}", i);
         decls.push(
@@ -212,7 +226,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             decls.push(quote!(let #char_data_ident = [ #(#char_data),* ] ;));
 
             let char_data_attr = format_ident!("_char_data_attr{}{}", i, j);
-            decls.push(quote!(let mut #char_data_attr = AttData::Static(&#char_data_ident);));
+            decls.push(quote!(let mut #char_data_attr = &#char_data_ident;));
 
             let char_data_attribute = format_ident!("_char_data_attribute{}{}", i, j);
             decls.push(
@@ -223,33 +237,46 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
             let gen_attr_att_data_ident = format_ident!("_gen_attr_att_data{}{}", i, j);
 
-            let rfunction = if characteristic.read.is_none() {
-                quote!(None)
-            } else {
-                let fname = format_ident!("{}", characteristic.read.as_ref().unwrap());
-                quote!(Some(&mut #fname))
-            };
-            let wfunction = if characteristic.write.is_none() {
-                quote!(None)
-            } else {
-                let fname = format_ident!("{}", characteristic.write.as_ref().unwrap());
-                quote!(Some(&mut #fname))
-            };
-
             decls.push(
-                quote!(let mut #gen_attr_att_data_ident = AttData::Dynamic { read_function: #rfunction, write_function: #wfunction};)
+                if characteristic.read.is_some() || characteristic.write.is_some() {
+                    let rfunction = if let Some(name) = &characteristic.read {
+                        let fname = format_ident!("{}", name);
+                        quote!(&mut #fname)
+                    } else {
+                        quote!(())
+                    };
+
+                    let wfunction = if let Some(name) = &characteristic.write {
+                        let fname = format_ident!("{}", name);
+                        quote!(&mut #fname)
+                    } else {
+                        quote!(())
+                    };
+
+                    quote!(let mut #gen_attr_att_data_ident = (#rfunction, #wfunction);)
+                } else if let Some(name) = &characteristic.value {
+                    let vname = format_ident!("{}", name);
+                    quote!(let mut #gen_attr_att_data_ident = (#vname,);)
+                } else if let Some(name) = &characteristic.data {
+                    let dname = format_ident!("{}", name);
+                    quote!(let mut #gen_attr_att_data_ident = (#dname,);)
+                } else {
+                    quote!(compile_error!(
+                        "Characteristic data fields missing: 'read'/'write' nor 'value' nor 'data'"
+                    ))
+                },
             );
 
             let gen_attr_ident = format_ident!("_gen_attr{}{}", i, j);
-            if uuid_bytes.len() == 2 {
-                decls.push(
-                    quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid16( u16::from_le_bytes([ #(#uuid_bytes),* ])), &mut #gen_attr_att_data_ident);)
-                );
+            let gen_attr_att_uuid = if uuid_bytes.len() == 2 {
+                quote!(Uuid::Uuid16(u16::from_le_bytes([ #(#uuid_bytes),* ])))
             } else {
-                decls.push(
-                    quote!(let #gen_attr_ident = Attribute::new(Uuid::Uuid128([ #(#uuid_bytes),* ]), &mut #gen_attr_att_data_ident);)
-                );
-            }
+                quote!(Uuid::Uuid128([ #(#uuid_bytes),* ]))
+            };
+
+            decls.push(
+                quote!(let #gen_attr_ident = Attribute::new(#gen_attr_att_uuid, &mut #gen_attr_att_data_ident);)
+            );
             attribs.push(quote!(#gen_attr_ident));
             current_handle += 1;
 
@@ -263,7 +290,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
                 let char_user_description_data_attr =
                     format_ident!("_char_user_description_data_attr{}{}", i, j);
-                decls.push(quote!(let mut #char_user_description_data_attr = AttData::Static(&#char_user_description_data_ident);));
+                decls.push(quote!(let mut #char_user_description_data_attr = &#char_user_description_data_ident;));
 
                 let char_user_description_data_attribute =
                     format_ident!("_char_user_description_data_attribute{}{}", i, j);
@@ -284,17 +311,37 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 let rfunction = format_ident!("_attr_read{}", current_handle);
                 let wfunction = format_ident!("_attr_write{}", current_handle);
                 decls.push(
-                    quote!(let mut #char_ccd_data_attr = AttData::Dynamic { read_function: Some(&mut #rfunction), write_function: Some(&mut #wfunction)};)
+                    quote!(let mut #char_ccd_data_attr = (&mut #rfunction, &mut #wfunction);),
                 );
 
                 let backing_data = format_ident!("_attr_data{}", current_handle);
                 pre.push(quote!(
-                    static mut #backing_data: [u8;2] = [0u8;2];
+                    static mut #backing_data: [u8; 2] = [0u8; 2];
 
-                    let mut #rfunction = || unsafe {& #backing_data[..]};
-                    let mut #wfunction = |offset: u16, data: &[u8]| {
+                    let mut #rfunction = |offset: usize, data: &mut [u8]| {
+                        let off = offset as usize;
                         unsafe {
-                            #backing_data.copy_from_slice(data);
+                            if off < #backing_data.len() {
+                                let len = #backing_data.len() - off;
+                                if len > 0 {
+                                    let len = len.min(data.len());
+                                    data[..len].copy_from_slice(&#backing_data[off..off+len]);
+                                    return len;
+                                }
+                            }
+                        }
+                        0
+                    };
+                    let mut #wfunction = |offset: usize, data: &[u8]| {
+                        let off = offset as usize;
+                        unsafe {
+                            if off < #backing_data.len() {
+                                let len = #backing_data.len() - off;
+                                if len > 0 {
+                                    let len = len.min(data.len());
+                                    #backing_data[off..off+len].copy_from_slice(&data[..len]);
+                                }
+                            }
                         }
                     };
                 ));
@@ -337,8 +384,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
     let code = quote! {
         use bleps::Data;
         use bleps::att::Uuid;
-        use bleps::attribute_server::AttData;
-        use bleps::attribute_server::Attribute;
+        use bleps::attribute::Attribute;
         use bleps::attribute_server::CHARACTERISTIC_UUID16;
         use bleps::attribute_server::PRIMARY_SERVICE_UUID16;
 
@@ -374,15 +420,17 @@ fn uuid_to_bytes(uuid: &str) -> Vec<u8> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Service {
     uuid: String,
     characteristics: Vec<Characteristic>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Characteristic {
     uuid: String,
+    data: Option<String>,
+    value: Option<String>,
     read: Option<String>,
     write: Option<String>,
     description: Option<String>,

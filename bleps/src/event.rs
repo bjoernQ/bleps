@@ -1,5 +1,3 @@
-use log::info;
-
 use crate::{read_to_data, Data, HciConnection};
 
 #[derive(Debug)]
@@ -79,7 +77,7 @@ pub fn parse_event(connector: &dyn HciConnection) -> EventType {
 
     match event.code {
         EVENT_COMMAND_COMPLETE => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let num_packets = data[0];
             let opcode = ((data[2] as u16) << 8) + data[1] as u16;
             let data = event.data.subdata_from(3);
@@ -90,7 +88,7 @@ pub fn parse_event(connector: &dyn HciConnection) -> EventType {
             }
         }
         EVENT_DISCONNECTION_COMPLETE => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let status = data[0];
             let handle = ((data[2] as u16) << 8) + data[1] as u16;
             let reason = data[3];
@@ -103,7 +101,7 @@ pub fn parse_event(connector: &dyn HciConnection) -> EventType {
             }
         }
         EVENT_NUMBER_OF_COMPLETED_PACKETS => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let num_handles = data[0];
             let connection_handle = ((data[2] as u16) << 8) + data[1] as u16;
             let completed_packet = ((data[4] as u16) << 8) + data[3] as u16;
@@ -114,10 +112,10 @@ pub fn parse_event(connector: &dyn HciConnection) -> EventType {
             }
         }
         _ => {
-            info!(
+            log::warn!(
                 "Ignoring unknown event {:02x} data = {:02x?}",
                 event.code,
-                event.data.to_slice()
+                event.data.as_slice()
             );
             EventType::Unknown
         }
@@ -141,7 +139,7 @@ where
 
     match event.code {
         EVENT_COMMAND_COMPLETE => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let num_packets = data[0];
             let opcode = ((data[2] as u16) << 8) + data[1] as u16;
             let data = event.data.subdata_from(3);
@@ -152,7 +150,7 @@ where
             }
         }
         EVENT_DISCONNECTION_COMPLETE => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let status = data[0];
             let handle = ((data[2] as u16) << 8) + data[1] as u16;
             let reason = data[3];
@@ -165,7 +163,7 @@ where
             }
         }
         EVENT_NUMBER_OF_COMPLETED_PACKETS => {
-            let data = event.data.to_slice();
+            let data = event.data.as_slice();
             let num_handles = data[0];
             let connection_handle = ((data[2] as u16) << 8) + data[1] as u16;
             let completed_packet = ((data[4] as u16) << 8) + data[3] as u16;
@@ -176,10 +174,10 @@ where
             }
         }
         _ => {
-            info!(
+            log::warn!(
                 "Ignoring unknown event {:02x} data = {:02x?}",
                 event.code,
-                event.data.to_slice()
+                event.data.as_slice()
             );
             EventType::Unknown
         }
