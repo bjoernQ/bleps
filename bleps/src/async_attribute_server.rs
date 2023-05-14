@@ -5,20 +5,19 @@ use futures::future::Either;
 use futures::pin_mut;
 
 use crate::{
-    acl::{encode_acl_packet, BoundaryFlag, HostBroadcastFlag},
+    acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
     asynch::Ble,
     att::{
-        parse_att, Att, AttErrorCode, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
+        Att, AttErrorCode, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
         ATT_FIND_INFORMATION_REQ_OPCODE, ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BLOB_REQ_OPCODE,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
     attribute::Attribute,
     attribute_server::{AttributeServerError, NotificationData, WorkResult, MTU},
-    check_command_completed,
-    command::{create_command_data, Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
+    command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
-    l2cap::{encode_l2cap, parse_l2cap},
+    l2cap::L2capPacket,
     Data, Error,
 };
 
@@ -75,22 +74,22 @@ where
 
     pub async fn update_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error> {
         self.ble
-            .write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).as_slice())
+            .write_bytes(Command::LeSetAdvertisingData { data }.encode().as_slice())
             .await;
-        check_command_completed(
-            self.ble
-                .wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)
-                .await?,
-        )
+        self.ble
+            .wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)
+            .await?
+            .check_command_completed()
     }
 
     pub async fn disconnect(&mut self, reason: u8) -> Result<EventType, Error> {
         self.ble
             .write_bytes(
-                create_command_data(Command::Disconnect {
+                Command::Disconnect {
                     connection_handle: 0,
                     reason,
-                })
+                }
+                .encode()
                 .as_slice(),
             )
             .await;
@@ -211,8 +210,8 @@ where
                     }
                 }
                 crate::PollResult::AsyncData(packet) => {
-                    let (src_handle, l2cap_packet) = parse_l2cap(packet)?;
-                    let packet = parse_att(l2cap_packet)?;
+                    let (src_handle, l2cap_packet) = L2capPacket::parse(packet)?;
+                    let packet = Att::parse(l2cap_packet)?;
                     log::trace!("att: {:x?}", packet);
                     match packet {
                         Att::ReadByGroupTypeReq {
@@ -572,10 +571,10 @@ where
         log::debug!("src_handle {}", handle);
         log::debug!("data {:x?}", data.as_slice());
 
-        let res = encode_l2cap(data);
+        let res = L2capPacket::encode(data);
         log::trace!("encoded_l2cap {:x?}", res.as_slice());
 
-        let res = encode_acl_packet(
+        let res = AclPacket::encode(
             handle,
             BoundaryFlag::FirstAutoFlushable,
             HostBroadcastFlag::NoBroadcast,
