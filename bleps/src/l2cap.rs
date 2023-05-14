@@ -8,12 +8,12 @@ pub struct L2capPacket {
 }
 
 #[derive(Debug)]
-pub enum L2capParseError {
+pub enum L2capDecodeError {
     Other,
 }
 
 impl L2capPacket {
-    pub fn parse(packet: AclPacket) -> Result<(u16, Self), L2capParseError> {
+    pub fn decode(packet: AclPacket) -> Result<(u16, Self), L2capDecodeError> {
         let data = packet.data.as_slice();
         let length = (data[0] as u16) + ((data[1] as u16) << 8);
         let channel = (data[2] as u16) + ((data[3] as u16) << 8);

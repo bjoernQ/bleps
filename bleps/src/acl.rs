@@ -37,7 +37,7 @@ pub enum HostBroadcastFlag {
 impl AclPacket {
     pub fn read(connector: &dyn HciConnection) -> Self {
         let raw_handle_buffer = [connector.read().unwrap(), connector.read().unwrap()];
-        let (pb, bc, handle) = Self::parse_raw_handle(raw_handle_buffer);
+        let (pb, bc, handle) = Self::decode_raw_handle(raw_handle_buffer);
 
         let len = u16::from_le_bytes([connector.read().unwrap(), connector.read().unwrap()]);
         let data = Data::read(connector, len as usize);
@@ -57,7 +57,7 @@ impl AclPacket {
     {
         let mut raw_handle_buffer = [0u8; 2];
         let _raw_handle_len = connector.read(&mut raw_handle_buffer).await.unwrap();
-        let (pb, bc, handle) = Self::parse_raw_handle(raw_handle_buffer);
+        let (pb, bc, handle) = Self::decode_raw_handle(raw_handle_buffer);
 
         let mut len_buffer = [0u8; 2];
         let _len_len = connector.read(&mut len_buffer).await.unwrap();
@@ -72,7 +72,7 @@ impl AclPacket {
         }
     }
 
-    fn parse_raw_handle(
+    fn decode_raw_handle(
         raw_handle_buffer: [u8; 2],
     ) -> (BoundaryFlag, ControllerBroadcastFlag, u16) {
         let raw_handle = u16::from_le_bytes(raw_handle_buffer);

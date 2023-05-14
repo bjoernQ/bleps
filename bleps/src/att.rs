@@ -178,14 +178,14 @@ pub enum Att {
 }
 
 #[derive(Debug)]
-pub enum AttParseError {
+pub enum AttDecodeError {
     Other,
     UnknownOpcode(u8, Data),
     UnexpectedPayload,
 }
 
 impl Att {
-    pub fn parse(packet: L2capPacket) -> Result<Self, AttParseError> {
+    pub fn decode(packet: L2capPacket) -> Result<Self, AttDecodeError> {
         let opcode = packet.payload.as_slice()[0];
         let payload = &packet.payload.as_slice()[1..];
 
@@ -199,10 +199,10 @@ impl Att {
                 } else if payload.len() == 20 {
                     let uuid = payload[4..21]
                         .try_into()
-                        .map_err(|_| AttParseError::Other)?;
+                        .map_err(|_| AttDecodeError::Other)?;
                     Uuid::Uuid128(uuid)
                 } else {
-                    return Err(AttParseError::UnexpectedPayload);
+                    return Err(AttDecodeError::UnexpectedPayload);
                 };
 
                 Ok(Self::ReadByGroupTypeReq {
@@ -220,10 +220,10 @@ impl Att {
                 } else if payload.len() == 20 {
                     let uuid = payload[4..21]
                         .try_into()
-                        .map_err(|_| AttParseError::Other)?;
+                        .map_err(|_| AttDecodeError::Other)?;
                     Uuid::Uuid128(uuid)
                 } else {
-                    return Err(AttParseError::UnexpectedPayload);
+                    return Err(AttDecodeError::UnexpectedPayload);
                 };
 
                 Ok(Self::ReadByTypeReq {
@@ -289,7 +289,7 @@ impl Att {
                 let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
                 Ok(Self::ReadBlobReq { handle, offset })
             }
-            _ => Err(AttParseError::UnknownOpcode(opcode, Data::new(payload))),
+            _ => Err(AttDecodeError::UnknownOpcode(opcode, Data::new(payload))),
         }
     }
 }

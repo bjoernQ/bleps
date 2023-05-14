@@ -1,7 +1,7 @@
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
     att::{
-        Att, AttErrorCode, AttParseError, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
+        Att, AttDecodeError, AttErrorCode, Uuid, ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE,
         ATT_FIND_INFORMATION_REQ_OPCODE, ATT_PREPARE_WRITE_REQ_OPCODE, ATT_READ_BLOB_REQ_OPCODE,
         ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, ATT_READ_BY_TYPE_REQUEST_OPCODE,
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
@@ -9,7 +9,7 @@ use crate::{
     attribute::Attribute,
     command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
-    l2cap::{L2capPacket, L2capParseError},
+    l2cap::{L2capDecodeError, L2capPacket},
     Ble, Data, Error,
 };
 
@@ -27,18 +27,18 @@ pub enum WorkResult {
 
 #[derive(Debug)]
 pub enum AttributeServerError {
-    L2capError(L2capParseError),
-    AttError(AttParseError),
+    L2capError(L2capDecodeError),
+    AttError(AttDecodeError),
 }
 
-impl From<L2capParseError> for AttributeServerError {
-    fn from(err: L2capParseError) -> Self {
+impl From<L2capDecodeError> for AttributeServerError {
+    fn from(err: L2capDecodeError) -> Self {
         AttributeServerError::L2capError(err)
     }
 }
 
-impl From<AttParseError> for AttributeServerError {
-    fn from(err: AttParseError) -> Self {
+impl From<AttDecodeError> for AttributeServerError {
+    fn from(err: AttDecodeError) -> Self {
         AttributeServerError::AttError(err)
     }
 }
@@ -146,8 +146,8 @@ impl<'a> AttributeServer<'a> {
                     }
                 }
                 crate::PollResult::AsyncData(packet) => {
-                    let (src_handle, l2cap_packet) = L2capPacket::parse(packet)?;
-                    let packet = Att::parse(l2cap_packet)?;
+                    let (src_handle, l2cap_packet) = L2capPacket::decode(packet)?;
+                    let packet = Att::decode(l2cap_packet)?;
                     log::trace!("att: {:x?}", packet);
                     match packet {
                         Att::ReadByGroupTypeReq {

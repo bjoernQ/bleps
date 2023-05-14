@@ -210,8 +210,8 @@ where
                     }
                 }
                 crate::PollResult::AsyncData(packet) => {
-                    let (src_handle, l2cap_packet) = L2capPacket::parse(packet)?;
-                    let packet = Att::parse(l2cap_packet)?;
+                    let (src_handle, l2cap_packet) = L2capPacket::decode(packet)?;
+                    let packet = Att::decode(l2cap_packet)?;
                     log::trace!("att: {:x?}", packet);
                     match packet {
                         Att::ReadByGroupTypeReq {
