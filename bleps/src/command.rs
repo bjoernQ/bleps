@@ -6,6 +6,7 @@ pub const RESET_OCF: u16 = 0x03;
 pub const LE_OGF: u8 = 0x08;
 pub const SET_ADVERTISING_PARAMETERS_OCF: u16 = 0x06;
 pub const SET_ADVERTISING_DATA_OCF: u16 = 0x08;
+pub const SET_SCAN_RSP_DATA_OCF: u16 = 0x09;
 pub const SET_ADVERTISE_ENABLE_OCF: u16 = 0x0a;
 
 pub const LINK_CONTROL_OGF: u8 = 0x01;
@@ -54,6 +55,7 @@ pub enum Command<'a> {
     LeSetAdvertisingParameters,
     LeSetAdvertisingParametersCustom(&'a AdvertisingParameters),
     LeSetAdvertisingData { data: Data },
+    LeSetScanRspData { data: Data },
     LeSetAdvertiseEnable(bool),
     Disconnect { connection_handle: u16, reason: u8 },
 }
@@ -97,6 +99,15 @@ pub fn create_command_data(command: Command) -> Data {
             let mut header = [0u8; 4];
             header[0] = 0x01;
             CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_DATA_OCF, data.len as u8)
+                .write_into(&mut header[1..]);
+            let mut res = Data::new(&header);
+            res.append(data.as_slice());
+            res
+        }
+        Command::LeSetScanRspData { ref data } => {
+            let mut header = [0u8; 4];
+            header[0] = 0x01;
+            CommandHeader::from_ogf_ocf(LE_OGF, SET_SCAN_RSP_DATA_OCF, data.len as u8)
                 .write_into(&mut header[1..]);
             let mut res = Data::new(&header);
             res.append(data.as_slice());

@@ -8,6 +8,7 @@ use core::cell::RefCell;
 use acl::{parse_acl_packet, AclPacket};
 use command::{
     create_command_data, opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF,
+    SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
 use embedded_io::blocking::{Read, Write};
@@ -267,6 +268,14 @@ impl<'a> Ble<'a> {
     {
         self.write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).as_slice());
         check_command_completed(self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)?)
+    }
+
+    pub fn cmd_set_le_scan_rsp_data(&mut self, data: Data) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(create_command_data(Command::LeSetScanRspData { data }).as_slice());
+        check_command_completed(self.wait_for_command_complete(LE_OGF, SET_SCAN_RSP_DATA_OCF)?)
     }
 
     pub fn cmd_set_le_advertise_enable(&mut self, enable: bool) -> Result<EventType, Error>
