@@ -68,24 +68,27 @@ impl Data {
                     self.append_uuid(uuid);
                 }
             }
-            AdStructure::ServiceData16 { uuid, data } => todo!(
-                "Unimplemented AdStructure::ServiceData16 {:?} {:?}",
-                uuid,
-                data
-            ),
+            AdStructure::ShortenedLocalName(name) => {
+                self.append(&[(name.len() + 1) as u8, 0x08]);
+                self.append(name.as_bytes());
+            }
             AdStructure::CompleteLocalName(name) => {
                 self.append(&[(name.len() + 1) as u8, 0x09]);
                 self.append(name.as_bytes());
             }
-            AdStructure::ShortenedLocalName(_) => todo!(),
+            AdStructure::ServiceData16 { uuid, data } => {
+                self.append(&[(data.len() + 3) as u8, 0x16]);
+                self.append_value(*uuid);
+                self.append(data);
+            }
             AdStructure::ManufacturerSpecificData {
                 company_identifier,
                 payload,
-            } => todo!(
-                "Unimplemented AdStructure::ManufacturerSpecificData {:?} {:?}",
-                company_identifier,
-                payload
-            ),
+            } => {
+                self.append(&[(payload.len() + 3) as u8, 0xff]);
+                self.append_value(*company_identifier);
+                self.append(payload);
+            }
             AdStructure::Unknown { ty, data } => todo!("Unimplemented {:?} {:?}", ty, data),
         }
     }
