@@ -60,78 +60,82 @@ pub enum Command<'a> {
     Disconnect { connection_handle: u16, reason: u8 },
 }
 
-pub fn create_command_data(command: Command) -> Data {
-    match command {
-        Command::Reset => {
-            let mut data = [0u8; 4];
-            data[0] = 0x01;
-            CommandHeader::from_ogf_ocf(CONTROLLER_OGF, RESET_OCF, 0x00).write_into(&mut data[1..]);
-            Data::new(&data)
-        }
-        Command::LeSetAdvertisingParameters => {
-            let mut data = [0u8; 4 + 0xf];
-            data[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
-                .write_into(&mut data[1..]);
-            data[4..].copy_from_slice(&[0x00, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0]);
-            Data::new(&data)
-        }
-        Command::LeSetAdvertisingParametersCustom(params) => {
-            let mut data = [0u8; 4 + 0xf];
-            data[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
-                .write_into(&mut data[1..]);
+impl<'a> Command<'a> {
+    pub fn encode(self) -> Data {
+        match self {
+            Command::Reset => {
+                let mut data = [0u8; 4];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(CONTROLLER_OGF, RESET_OCF, 0x00)
+                    .write_into(&mut data[1..]);
+                Data::new(&data)
+            }
+            Command::LeSetAdvertisingParameters => {
+                let mut data = [0u8; 4 + 0xf];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
+                    .write_into(&mut data[1..]);
+                data[4..]
+                    .copy_from_slice(&[0x00, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0]);
+                Data::new(&data)
+            }
+            Command::LeSetAdvertisingParametersCustom(params) => {
+                let mut data = [0u8; 4 + 0xf];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF, 0x0f)
+                    .write_into(&mut data[1..]);
 
-            let mut adv_params = Data::new(&[]);
-            adv_params.append(&params.advertising_interval_min.to_be_bytes());
-            adv_params.append(&params.advertising_interval_max.to_be_bytes());
-            adv_params.append(&[params.advertising_type as u8]);
-            adv_params.append(&[params.own_address_type as u8]);
-            adv_params.append(&[params.peer_address_type as u8]);
-            adv_params.append(&params.peer_address);
-            adv_params.append(&[params.advertising_channel_map]);
-            adv_params.append(&[params.filter_policy as u8]);
+                let mut adv_params = Data::new(&[]);
+                adv_params.append(&params.advertising_interval_min.to_be_bytes());
+                adv_params.append(&params.advertising_interval_max.to_be_bytes());
+                adv_params.append(&[params.advertising_type as u8]);
+                adv_params.append(&[params.own_address_type as u8]);
+                adv_params.append(&[params.peer_address_type as u8]);
+                adv_params.append(&params.peer_address);
+                adv_params.append(&[params.advertising_channel_map]);
+                adv_params.append(&[params.filter_policy as u8]);
 
-            data[4..].copy_from_slice(adv_params.as_slice());
-            Data::new(&data)
-        }
-        Command::LeSetAdvertisingData { ref data } => {
-            let mut header = [0u8; 4];
-            header[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_DATA_OCF, data.len as u8)
-                .write_into(&mut header[1..]);
-            let mut res = Data::new(&header);
-            res.append(data.as_slice());
-            res
-        }
-        Command::LeSetScanRspData { ref data } => {
-            let mut header = [0u8; 4];
-            header[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LE_OGF, SET_SCAN_RSP_DATA_OCF, data.len as u8)
-                .write_into(&mut header[1..]);
-            let mut res = Data::new(&header);
-            res.append(data.as_slice());
-            res
-        }
-        Command::LeSetAdvertiseEnable(enable) => {
-            let mut data = [0u8; 5];
-            data[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISE_ENABLE_OCF, 0x01)
-                .write_into(&mut data[1..]);
-            data[4] = if enable { 1 } else { 0 };
-            Data::new(&data)
-        }
-        Command::Disconnect {
-            connection_handle,
-            reason,
-        } => {
-            let mut data = [0u8; 7];
-            data[0] = 0x01;
-            CommandHeader::from_ogf_ocf(LINK_CONTROL_OGF, DISCONNECT_OCF, 0x03)
-                .write_into(&mut data[1..]);
-            data[4..][..2].copy_from_slice(&connection_handle.to_le_bytes());
-            data[6] = reason;
-            Data::new(&data)
+                data[4..].copy_from_slice(adv_params.as_slice());
+                Data::new(&data)
+            }
+            Command::LeSetAdvertisingData { ref data } => {
+                let mut header = [0u8; 4];
+                header[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISING_DATA_OCF, data.len as u8)
+                    .write_into(&mut header[1..]);
+                let mut res = Data::new(&header);
+                res.append(data.as_slice());
+                res
+            }
+            Command::LeSetScanRspData { ref data } => {
+                let mut header = [0u8; 4];
+                header[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, SET_SCAN_RSP_DATA_OCF, data.len as u8)
+                    .write_into(&mut header[1..]);
+                let mut res = Data::new(&header);
+                res.append(data.as_slice());
+                res
+            }
+            Command::LeSetAdvertiseEnable(enable) => {
+                let mut data = [0u8; 5];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, SET_ADVERTISE_ENABLE_OCF, 0x01)
+                    .write_into(&mut data[1..]);
+                data[4] = if enable { 1 } else { 0 };
+                Data::new(&data)
+            }
+            Command::Disconnect {
+                connection_handle,
+                reason,
+            } => {
+                let mut data = [0u8; 7];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LINK_CONTROL_OGF, DISCONNECT_OCF, 0x03)
+                    .write_into(&mut data[1..]);
+                data[4..][..2].copy_from_slice(&connection_handle.to_le_bytes());
+                data[6] = reason;
+                Data::new(&data)
+            }
         }
     }
 }

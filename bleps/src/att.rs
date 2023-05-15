@@ -178,117 +178,119 @@ pub enum Att {
 }
 
 #[derive(Debug)]
-pub enum AttParseError {
+pub enum AttDecodeError {
     Other,
     UnknownOpcode(u8, Data),
     UnexpectedPayload,
 }
 
-pub fn parse_att(packet: L2capPacket) -> Result<Att, AttParseError> {
-    let opcode = packet.payload.as_slice()[0];
-    let payload = &packet.payload.as_slice()[1..];
+impl Att {
+    pub fn decode(packet: L2capPacket) -> Result<Self, AttDecodeError> {
+        let opcode = packet.payload.as_slice()[0];
+        let payload = &packet.payload.as_slice()[1..];
 
-    match opcode {
-        ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE => {
-            let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
+        match opcode {
+            ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE => {
+                let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
 
-            let group_type = if payload.len() == 6 {
-                Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
-            } else if payload.len() == 20 {
-                let uuid = payload[4..21]
-                    .try_into()
-                    .map_err(|_| AttParseError::Other)?;
-                Uuid::Uuid128(uuid)
-            } else {
-                return Err(AttParseError::UnexpectedPayload);
-            };
+                let group_type = if payload.len() == 6 {
+                    Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
+                } else if payload.len() == 20 {
+                    let uuid = payload[4..21]
+                        .try_into()
+                        .map_err(|_| AttDecodeError::Other)?;
+                    Uuid::Uuid128(uuid)
+                } else {
+                    return Err(AttDecodeError::UnexpectedPayload);
+                };
 
-            Ok(Att::ReadByGroupTypeReq {
-                start: start_handle,
-                end: end_handle,
-                group_type,
-            })
-        }
-        ATT_READ_BY_TYPE_REQUEST_OPCODE => {
-            let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
+                Ok(Self::ReadByGroupTypeReq {
+                    start: start_handle,
+                    end: end_handle,
+                    group_type,
+                })
+            }
+            ATT_READ_BY_TYPE_REQUEST_OPCODE => {
+                let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
 
-            let attribute_type = if payload.len() == 6 {
-                Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
-            } else if payload.len() == 20 {
-                let uuid = payload[4..21]
-                    .try_into()
-                    .map_err(|_| AttParseError::Other)?;
-                Uuid::Uuid128(uuid)
-            } else {
-                return Err(AttParseError::UnexpectedPayload);
-            };
+                let attribute_type = if payload.len() == 6 {
+                    Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
+                } else if payload.len() == 20 {
+                    let uuid = payload[4..21]
+                        .try_into()
+                        .map_err(|_| AttDecodeError::Other)?;
+                    Uuid::Uuid128(uuid)
+                } else {
+                    return Err(AttDecodeError::UnexpectedPayload);
+                };
 
-            Ok(Att::ReadByTypeReq {
-                start: start_handle,
-                end: end_handle,
-                attribute_type,
-            })
-        }
-        ATT_READ_REQUEST_OPCODE => {
-            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                Ok(Self::ReadByTypeReq {
+                    start: start_handle,
+                    end: end_handle,
+                    attribute_type,
+                })
+            }
+            ATT_READ_REQUEST_OPCODE => {
+                let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
 
-            Ok(Att::ReadReq { handle })
-        }
-        ATT_WRITE_REQUEST_OPCODE => {
-            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let mut data = Data::default();
-            data.append(&payload[2..]);
+                Ok(Self::ReadReq { handle })
+            }
+            ATT_WRITE_REQUEST_OPCODE => {
+                let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let mut data = Data::default();
+                data.append(&payload[2..]);
 
-            Ok(Att::WriteReq { handle, data })
-        }
-        ATT_EXCHANGE_MTU_REQUEST_OPCODE => {
-            let mtu = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            Ok(Att::ExchangeMtu { mtu })
-        }
-        ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE => {
-            let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
-            let att_type = (payload[4] as u16) + ((payload[5] as u16) << 8);
-            let att_value = (payload[6] as u16) + ((payload[7] as u16) << 8); // only U16 supported here
+                Ok(Self::WriteReq { handle, data })
+            }
+            ATT_EXCHANGE_MTU_REQUEST_OPCODE => {
+                let mtu = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                Ok(Self::ExchangeMtu { mtu })
+            }
+            ATT_FIND_BY_TYPE_VALUE_REQUEST_OPCODE => {
+                let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
+                let att_type = (payload[4] as u16) + ((payload[5] as u16) << 8);
+                let att_value = (payload[6] as u16) + ((payload[7] as u16) << 8); // only U16 supported here
 
-            Ok(Att::FindByTypeValue {
-                start_handle,
-                end_handle,
-                att_type,
-                att_value,
-            })
-        }
-        ATT_FIND_INFORMATION_REQ_OPCODE => {
-            let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
+                Ok(Self::FindByTypeValue {
+                    start_handle,
+                    end_handle,
+                    att_type,
+                    att_value,
+                })
+            }
+            ATT_FIND_INFORMATION_REQ_OPCODE => {
+                let start_handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let end_handle = (payload[2] as u16) + ((payload[3] as u16) << 8);
 
-            Ok(Att::FindInformation {
-                start_handle,
-                end_handle,
-            })
+                Ok(Self::FindInformation {
+                    start_handle,
+                    end_handle,
+                })
+            }
+            ATT_PREPARE_WRITE_REQ_OPCODE => {
+                let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
+                let value = &payload[4..];
+                Ok(Self::PrepareWriteReq {
+                    handle,
+                    offset,
+                    value: Data::new(value),
+                })
+            }
+            ATT_EXECUTE_WRITE_REQ_OPCODE => {
+                let flags = payload[0];
+                Ok(Self::ExecuteWriteReq { flags })
+            }
+            ATT_READ_BLOB_REQ_OPCODE => {
+                let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
+                Ok(Self::ReadBlobReq { handle, offset })
+            }
+            _ => Err(AttDecodeError::UnknownOpcode(opcode, Data::new(payload))),
         }
-        ATT_PREPARE_WRITE_REQ_OPCODE => {
-            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
-            let value = &payload[4..];
-            Ok(Att::PrepareWriteReq {
-                handle,
-                offset,
-                value: Data::new(value),
-            })
-        }
-        ATT_EXECUTE_WRITE_REQ_OPCODE => {
-            let flags = payload[0];
-            Ok(Att::ExecuteWriteReq { flags })
-        }
-        ATT_READ_BLOB_REQ_OPCODE => {
-            let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
-            let offset = (payload[2] as u16) + ((payload[3] as u16) << 8);
-            Ok(Att::ReadBlobReq { handle, offset })
-        }
-        _ => Err(AttParseError::UnknownOpcode(opcode, Data::new(payload))),
     }
 }
 

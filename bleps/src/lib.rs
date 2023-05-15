@@ -5,14 +5,13 @@
 
 use core::cell::RefCell;
 
-use acl::{parse_acl_packet, AclPacket};
+use acl::AclPacket;
 use command::{
-    create_command_data, opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF,
-    SET_SCAN_RSP_DATA_OCF,
+    opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
 use embedded_io::blocking::{Read, Write};
-use event::{parse_event, EventType};
+use event::EventType;
 
 pub mod acl;
 pub mod att;
@@ -197,22 +196,6 @@ const PACKET_TYPE_COMMAND: u8 = 0x01;
 const PACKET_TYPE_ASYNC_DATA: u8 = 0x02;
 const PACKET_TYPE_EVENT: u8 = 0x04;
 
-fn check_command_completed(event: EventType) -> Result<EventType, Error> {
-    if let EventType::CommandComplete {
-        num_packets: _,
-        opcode: _,
-        data,
-    } = event
-    {
-        let status = data.as_slice()[0];
-        if status != 0 {
-            return Err(Error::Failed(status));
-        }
-    }
-
-    Ok(event)
-}
-
 pub struct Ble<'a> {
     connector: &'a dyn HciConnection,
 }
@@ -233,18 +216,18 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::Reset).as_slice());
-        check_command_completed(self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)?)
+        self.write_bytes(Command::Reset.encode().as_slice());
+        self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)?
+            .check_command_completed()
     }
 
     pub fn cmd_set_le_advertising_parameters(&mut self) -> Result<EventType, Error>
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).as_slice());
-        check_command_completed(
-            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
-        )
+        self.write_bytes(Command::LeSetAdvertisingParameters.encode().as_slice());
+        self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?
+            .check_command_completed()
     }
 
     pub fn cmd_set_le_advertising_parameters_custom(
@@ -255,35 +238,39 @@ impl<'a> Ble<'a> {
         Self: Sized,
     {
         self.write_bytes(
-            create_command_data(Command::LeSetAdvertisingParametersCustom(params)).as_slice(),
+            Command::LeSetAdvertisingParametersCustom(params)
+                .encode()
+                .as_slice(),
         );
-        check_command_completed(
-            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?,
-        )
+        self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)?
+            .check_command_completed()
     }
 
     pub fn cmd_set_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error>
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertisingData { data }).as_slice());
-        check_command_completed(self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)?)
+        self.write_bytes(Command::LeSetAdvertisingData { data }.encode().as_slice());
+        self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)?
+            .check_command_completed()
     }
 
     pub fn cmd_set_le_scan_rsp_data(&mut self, data: Data) -> Result<EventType, Error>
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetScanRspData { data }).as_slice());
-        check_command_completed(self.wait_for_command_complete(LE_OGF, SET_SCAN_RSP_DATA_OCF)?)
+        self.write_bytes(Command::LeSetScanRspData { data }.encode().as_slice());
+        self.wait_for_command_complete(LE_OGF, SET_SCAN_RSP_DATA_OCF)?
+            .check_command_completed()
     }
 
     pub fn cmd_set_le_advertise_enable(&mut self, enable: bool) -> Result<EventType, Error>
     where
         Self: Sized,
     {
-        self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).as_slice());
-        check_command_completed(self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)?)
+        self.write_bytes(Command::LeSetAdvertiseEnable(enable).encode().as_slice());
+        self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)?
+            .check_command_completed()
     }
 
     fn wait_for_command_complete(&mut self, ogf: u8, ocf: u16) -> Result<EventType, Error>
@@ -321,11 +308,11 @@ impl<'a> Ble<'a> {
             Some(packet_type) => match packet_type {
                 PACKET_TYPE_COMMAND => {}
                 PACKET_TYPE_ASYNC_DATA => {
-                    let acl_packet = parse_acl_packet(self.connector);
+                    let acl_packet = AclPacket::read(self.connector);
                     return Some(PollResult::AsyncData(acl_packet));
                 }
                 PACKET_TYPE_EVENT => {
-                    let event = parse_event(self.connector);
+                    let event = EventType::read(self.connector);
                     return Some(PollResult::Event(event));
                 }
                 _ => {
@@ -346,24 +333,26 @@ impl<'a> Ble<'a> {
     }
 }
 
-fn read_to_data(connector: &dyn HciConnection, len: usize) -> Data {
-    let mut data = [0u8; 128];
-    for i in 0..len {
-        loop {
-            match connector.read() {
-                Some(byte) => {
-                    data[i] = byte;
-                    break;
-                }
-                None => {
-                    // TODO timeout?
-                }
-            };
+impl Data {
+    fn read(connector: &dyn HciConnection, len: usize) -> Self {
+        let mut data = [0u8; 128];
+        for i in 0..len {
+            loop {
+                match connector.read() {
+                    Some(byte) => {
+                        data[i] = byte;
+                        break;
+                    }
+                    None => {
+                        // TODO timeout?
+                    }
+                };
+            }
         }
+        let mut data = Self::new(&data);
+        data.len = len;
+        data
     }
-    let mut data = Data::new(&data);
-    data.len = len;
-    data
 }
 
 pub trait HciConnection {
@@ -418,8 +407,6 @@ where
 
 #[cfg(feature = "async")]
 pub mod asynch {
-    use crate::{acl::async_parse_acl_packet, event::async_parse_event};
-
     use super::*;
 
     pub struct Ble<T>
@@ -456,24 +443,21 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::Reset).as_slice())
-                .await;
-            check_command_completed(
-                self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
-                    .await?,
-            )
+            self.write_bytes(Command::Reset.encode().as_slice()).await;
+            self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
+                .await?
+                .check_command_completed()
         }
 
         pub async fn cmd_set_le_advertising_parameters(&mut self) -> Result<EventType, Error>
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::LeSetAdvertisingParameters).as_slice())
+            self.write_bytes(Command::LeSetAdvertisingParameters.encode().as_slice())
                 .await;
-            check_command_completed(
-                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
-                    .await?,
-            )
+            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
+                .await?
+                .check_command_completed()
         }
 
         pub async fn cmd_set_le_advertising_parameters_custom(
@@ -484,27 +468,25 @@ pub mod asynch {
             Self: Sized,
         {
             self.write_bytes(
-                create_command_data(Command::LeSetAdvertisingParametersCustom(params)).as_slice(),
+                Command::LeSetAdvertisingParametersCustom(params)
+                    .encode()
+                    .as_slice(),
             )
             .await;
-            check_command_completed(
-                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
-                    .await?,
-            )
+            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_PARAMETERS_OCF)
+                .await?
+                .check_command_completed()
         }
 
         pub async fn cmd_set_le_advertising_data(&mut self, data: Data) -> Result<EventType, Error>
         where
             Self: Sized,
         {
-            self.write_bytes(
-                create_command_data(Command::LeSetAdvertisingData { data }).as_slice(),
-            )
-            .await;
-            check_command_completed(
-                self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)
-                    .await?,
-            )
+            self.write_bytes(Command::LeSetAdvertisingData { data }.encode().as_slice())
+                .await;
+            self.wait_for_command_complete(LE_OGF, SET_ADVERTISING_DATA_OCF)
+                .await?
+                .check_command_completed()
         }
 
         pub async fn cmd_set_le_advertise_enable(
@@ -514,12 +496,11 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            self.write_bytes(create_command_data(Command::LeSetAdvertiseEnable(enable)).as_slice())
+            self.write_bytes(Command::LeSetAdvertiseEnable(enable).encode().as_slice())
                 .await;
-            check_command_completed(
-                self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)
-                    .await?,
-            )
+            self.wait_for_command_complete(LE_OGF, SET_ADVERTISE_ENABLE_OCF)
+                .await?
+                .check_command_completed()
         }
 
         pub(crate) async fn wait_for_command_complete(
@@ -567,11 +548,11 @@ pub mod asynch {
                 Some(packet_type) => match packet_type {
                     PACKET_TYPE_COMMAND => {}
                     PACKET_TYPE_ASYNC_DATA => {
-                        let acl_packet = async_parse_acl_packet(&mut *self.hci.borrow_mut()).await;
+                        let acl_packet = AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
                         return Some(PollResult::AsyncData(acl_packet));
                     }
                     PACKET_TYPE_EVENT => {
-                        let event = async_parse_event(&mut *self.hci.borrow_mut()).await;
+                        let event = EventType::async_read(&mut *self.hci.borrow_mut()).await;
                         return Some(PollResult::Event(event));
                     }
                     _ => {
@@ -590,25 +571,27 @@ pub mod asynch {
         }
     }
 
-    pub(crate) async fn read_to_data<T>(mut connector: T, len: usize) -> Data
-    where
-        T: embedded_io::asynch::Read,
-    {
-        let mut idx = 0;
-        let mut data = [0u8; 128];
-        loop {
-            let l = connector.read(&mut data[idx..][..len]).await.unwrap();
-            idx += l;
+    impl Data {
+        pub(crate) async fn async_read<T>(mut connector: T, len: usize) -> Self
+        where
+            T: embedded_io::asynch::Read,
+        {
+            let mut idx = 0;
+            let mut data = [0u8; 128];
+            loop {
+                let l = connector.read(&mut data[idx..][..len]).await.unwrap();
+                idx += l;
 
-            if idx >= len {
-                break;
+                if idx >= len {
+                    break;
+                }
+
+                // TODO timeout?
             }
 
-            // TODO timeout?
+            let mut data = Self::new(&data);
+            data.len = len;
+            data
         }
-
-        let mut data = Data::new(&data);
-        data.len = len;
-        data
     }
 }
