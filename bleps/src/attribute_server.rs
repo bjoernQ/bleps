@@ -82,7 +82,7 @@ impl<'a> AttributeServer<'a> {
         let att = &mut self.attributes[handle as usize];
 
         if att.data.readable() {
-            Some(att.data.read(offset as usize, buffer))
+            att.data.read(offset as usize, buffer).ok()
         } else {
             None
         }
@@ -232,32 +232,33 @@ impl<'a> AttributeServer<'a> {
         group_type: Uuid,
     ) {
         // TODO respond with all finds - not just one
+        let mut handle = start;
+        let mut data = Data::new_att_read_by_group_type_response();
+        let mut val = Err(AttErrorCode::AttributeNotFound);
         for att in self.attributes.iter_mut() {
             log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == group_type && att.handle >= start && att.handle <= end {
-                let mut data = Data::new_att_read_by_group_type_response();
                 log::debug!("found! {:x?}", att.handle);
-                data.append_att_read_by_group_type_response(
-                    att.handle,
-                    att.last_handle_in_group,
-                    &Uuid::from(att.value()),
-                );
-                self.write_att(src_handle, data);
-                return;
+                handle = att.handle;
+                val = att.value();
+                if let Ok(val) = val {
+                    data.append_att_read_by_group_type_response(
+                        att.handle,
+                        att.last_handle_in_group,
+                        &Uuid::from(val),
+                    );
+                }
+                break;
             }
         }
 
-        log::debug!("not found");
-
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE,
-                start,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        let response = match val {
+            Ok(_) => data,
+            Err(e) => {
+                Data::new_att_error_response(ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, handle, e)
+            }
+        };
+        self.write_att(src_handle, response);
     }
 
     fn handle_read_by_type_req(
@@ -268,92 +269,78 @@ impl<'a> AttributeServer<'a> {
         attribute_type: Uuid,
     ) {
         // TODO respond with all finds - not just one
+        let mut handle = start;
+        let mut data = Data::new_att_read_by_type_response();
+        let mut err = Err(AttErrorCode::AttributeNotFound);
         for att in self.attributes.iter_mut() {
             log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.uuid == attribute_type && att.handle >= start && att.handle <= end {
-                let mut data = Data::new_att_read_by_type_response();
                 data.append_value(att.handle);
+                handle = att.handle;
 
                 if att.data.readable() {
-                    let len = att.data.read(0, data.as_slice_mut());
-                    data.append_len(len);
+                    err = att.data.read(0, data.as_slice_mut());
+                    if let Ok(len) = err {
+                        data.append_len(len);
+                        data.append_att_read_by_type_response();
+                    }
                 }
-                data.append_att_read_by_type_response();
 
                 log::debug!("found! {:x?} {}", att.uuid, att.handle);
-                self.write_att(src_handle, data);
-                return;
+                break;
             }
         }
 
-        log::debug!("not found");
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_READ_BY_TYPE_REQUEST_OPCODE,
-                start,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        let response = match err {
+            Ok(_) => data,
+            Err(e) => Data::new_att_error_response(ATT_READ_BY_TYPE_REQUEST_OPCODE, handle, e),
+        };
+        self.write_att(src_handle, response);
     }
 
     fn handle_read_req(&mut self, src_handle: u16, handle: u16) {
         let mut data = Data::new_att_read_response();
+        let mut err = Err(AttErrorCode::AttributeNotFound);
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 if att.data.readable() {
-                    let len = att.data.read(0, data.as_slice_mut());
-                    data.append_len(len);
+                    err = att.data.read(0, data.as_slice_mut());
+                    if let Ok(len) = err {
+                        data.append_len(len);
+                    }
                 }
                 break;
             }
         }
 
-        if data.has_att_read_response_data() {
-            data.limit_len(MTU as usize);
-            self.write_att(src_handle, data);
-            return;
-        }
+        let response = match err {
+            Ok(_) => {
+                data.limit_len(MTU as usize);
+                data
+            }
+            Err(e) => Data::new_att_error_response(ATT_READ_REQUEST_OPCODE, handle, e),
+        };
 
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_READ_REQUEST_OPCODE,
-                handle,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        self.write_att(src_handle, response);
     }
 
     fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
-        let mut found = false;
+        let mut err = Err(AttErrorCode::AttributeNotFound);
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 if att.data.writable() {
-                    att.data.write(0, &data.as_slice());
+                    err = att.data.write(0, data.as_slice());
                 }
-                found = true;
                 break;
             }
         }
 
-        if found {
-            self.write_att(src_handle, Data::new_att_write_response());
-            return;
-        }
-
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_WRITE_REQUEST_OPCODE,
-                handle,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        let response = match err {
+            Ok(()) => Data::new_att_write_response(),
+            Err(e) => Data::new_att_error_response(ATT_WRITE_REQUEST_OPCODE, handle, e),
+        };
+        self.write_att(src_handle, response);
     }
 
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
@@ -418,31 +405,24 @@ impl<'a> AttributeServer<'a> {
 
     fn handle_prepare_write(&mut self, src_handle: u16, handle: u16, offset: u16, value: Data) {
         let mut data = Data::new_att_prepare_write_response(handle, offset);
+        let mut err = Err(AttErrorCode::AttributeNotFound);
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 if att.data.writable() {
-                    att.data.write(offset as usize, value.as_slice());
+                    err = att.data.write(offset as usize, value.as_slice());
                 }
                 data.append(value.as_slice());
                 break;
             }
         }
 
-        if data.has_att_prepare_write_response_data() {
-            self.write_att(src_handle, data);
-            return;
-        }
+        let response = match err {
+            Ok(()) => data,
+            Err(e) => Data::new_att_error_response(ATT_PREPARE_WRITE_REQ_OPCODE, handle, e),
+        };
 
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_PREPARE_WRITE_REQ_OPCODE,
-                handle,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        self.write_att(src_handle, response);
     }
 
     fn handle_execute_write(&mut self, src_handle: u16, _flags: u8) {
@@ -452,32 +432,29 @@ impl<'a> AttributeServer<'a> {
 
     fn handle_read_blob(&mut self, src_handle: u16, handle: u16, offset: u16) {
         let mut data = Data::new_att_read_blob_response();
+        let mut err = Err(AttErrorCode::AttributeNotFound);
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 if att.data.readable() {
-                    let len = att.data.read(offset as usize, data.as_slice_mut());
-                    data.append_len(len);
+                    err = att.data.read(offset as usize, data.as_slice_mut());
+                    if let Ok(len) = err {
+                        data.append_len(len);
+                    }
                 }
                 break;
             }
         }
 
-        if data.has_att_read_blob_response_data() {
-            data.limit_len(MTU as usize - 1);
-            self.write_att(src_handle, data);
-            return;
-        }
+        let response = match err {
+            Ok(_) => {
+                data.limit_len(MTU as usize - 1);
+                data
+            }
+            Err(e) => Data::new_att_error_response(ATT_READ_BLOB_REQ_OPCODE, handle, e),
+        };
 
-        // respond with error
-        self.write_att(
-            src_handle,
-            Data::new_att_error_response(
-                ATT_READ_BLOB_REQ_OPCODE,
-                handle,
-                AttErrorCode::AttributeNotFound,
-            ),
-        );
+        self.write_att(src_handle, response);
     }
 
     fn write_att(&mut self, handle: u16, data: Data) {
