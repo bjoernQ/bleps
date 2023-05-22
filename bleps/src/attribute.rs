@@ -1,21 +1,26 @@
 use core::{fmt, mem::size_of, slice};
 
-use crate::{att::Uuid, Data};
+use crate::{
+    att::{AttErrorCode, Uuid},
+    Data,
+};
 
 pub trait AttData {
     fn readable(&self) -> bool {
         false
     }
 
-    fn read(&mut self, _offset: usize, _data: &mut [u8]) -> usize {
-        0
+    fn read(&mut self, _offset: usize, _data: &mut [u8]) -> Result<usize, AttErrorCode> {
+        Ok(0)
     }
 
     fn writable(&self) -> bool {
         false
     }
 
-    fn write(&mut self, _offset: usize, _data: &[u8]) {}
+    fn write(&mut self, _offset: usize, _data: &[u8]) -> Result<(), AttErrorCode> {
+        Ok(())
+    }
 }
 
 impl<'a, const N: usize> AttData for &'a [u8; N] {
@@ -23,15 +28,15 @@ impl<'a, const N: usize> AttData for &'a [u8; N] {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         if offset > N {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(N - offset);
         if len > 0 {
             data[..len].copy_from_slice(&self[offset..offset + len]);
         }
-        len
+        Ok(len)
     }
 }
 
@@ -40,29 +45,30 @@ impl<'a, const N: usize> AttData for &'a mut [u8; N] {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         if offset > N {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(N - offset);
         if len > 0 {
             data[..len].copy_from_slice(&self[offset..offset + len]);
         }
-        len
+        Ok(len)
     }
 
     fn writable(&self) -> bool {
         true
     }
 
-    fn write(&mut self, offset: usize, data: &[u8]) {
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
         if offset > N {
-            return;
+            return Ok(());
         }
         let len = data.len().min(N - offset);
         if len > 0 {
             self[offset..offset + len].copy_from_slice(&data[..len]);
         }
+        Ok(())
     }
 }
 
@@ -71,14 +77,14 @@ impl<'a> AttData for &'a [u8] {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         let len = self.len();
         if offset > len {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(len - offset);
         data[..len].copy_from_slice(&self[offset..offset + len]);
-        len
+        Ok(len)
     }
 }
 
@@ -87,27 +93,28 @@ impl<'a> AttData for &'a mut [u8] {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         let len = self.len();
         if offset > len {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(len - offset);
         data[..len].copy_from_slice(&self[offset..offset + len]);
-        len
+        Ok(len)
     }
 
     fn writable(&self) -> bool {
         true
     }
 
-    fn write(&mut self, offset: usize, data: &[u8]) {
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
         let len = self.len();
         if offset > len {
-            return;
+            return Ok(());
         }
         let len = data.len().min(len - offset);
         self[offset..offset + len].copy_from_slice(&data[..len]);
+        Ok(())
     }
 }
 
@@ -116,9 +123,9 @@ impl<'a, T: Sized + 'static> AttData for &'a (T,) {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         if offset > size_of::<T>() {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(size_of::<T>() - offset);
         if len > 0 {
@@ -127,7 +134,7 @@ impl<'a, T: Sized + 'static> AttData for &'a (T,) {
             // TODO: Handle big endian case
             data[..len].copy_from_slice(&slice[offset..offset + len]);
         }
-        len
+        Ok(len)
     }
 }
 
@@ -136,9 +143,9 @@ impl<'a, T: Sized + 'static> AttData for &'a mut (T,) {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
         if offset > size_of::<T>() {
-            return 0;
+            return Ok(0);
         }
         let len = data.len().min(size_of::<T>() - offset);
         if len > 0 {
@@ -147,16 +154,16 @@ impl<'a, T: Sized + 'static> AttData for &'a mut (T,) {
             // TODO: Handle big endian case
             data[..len].copy_from_slice(&slice[offset..offset + len]);
         }
-        len
+        Ok(len)
     }
 
     fn writable(&self) -> bool {
         true
     }
 
-    fn write(&mut self, offset: usize, data: &[u8]) {
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
         if offset > size_of::<T>() {
-            return;
+            return Ok(());
         }
         let len = data.len().min(size_of::<T>() - offset);
         if len > 0 {
@@ -166,54 +173,75 @@ impl<'a, T: Sized + 'static> AttData for &'a mut (T,) {
             // TODO: Handle big endian case
             slice[offset..offset + len].copy_from_slice(&data[..len]);
         }
+        Ok(())
     }
 }
 
-impl<R> AttData for (R, ())
+trait IntoResult<T> {
+    fn into_result(self) -> Result<T, AttErrorCode>;
+}
+
+impl<T> IntoResult<T> for T {
+    fn into_result(self) -> Result<T, AttErrorCode> {
+        Ok(self)
+    }
+}
+
+impl<T> IntoResult<T> for Result<T, AttErrorCode> {
+    fn into_result(self) -> Result<T, AttErrorCode> {
+        self
+    }
+}
+
+impl<T, R> AttData for (R, ())
 where
-    R: FnMut(usize, &mut [u8]) -> usize,
+    T: IntoResult<usize>,
+    R: FnMut(usize, &mut [u8]) -> T,
 {
     fn readable(&self) -> bool {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
-        self.0(offset, data)
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
+        self.0(offset, data).into_result()
     }
 }
 
-impl<W> AttData for ((), W)
+impl<U, W> AttData for ((), W)
 where
-    W: FnMut(usize, &[u8]),
+    U: IntoResult<()>,
+    W: FnMut(usize, &[u8]) -> U,
 {
     fn writable(&self) -> bool {
         true
     }
 
-    fn write(&mut self, offset: usize, data: &[u8]) {
-        self.1(offset, data);
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
+        self.1(offset, data).into_result()
     }
 }
 
-impl<R, W> AttData for (R, W)
+impl<T, U, R, W> AttData for (R, W)
 where
-    R: FnMut(usize, &mut [u8]) -> usize,
-    W: FnMut(usize, &[u8]),
+    T: IntoResult<usize>,
+    U: IntoResult<()>,
+    R: FnMut(usize, &mut [u8]) -> T,
+    W: FnMut(usize, &[u8]) -> U,
 {
     fn readable(&self) -> bool {
         true
     }
 
-    fn read(&mut self, offset: usize, data: &mut [u8]) -> usize {
-        self.0(offset, data)
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
+        self.0(offset, data).into_result()
     }
 
     fn writable(&self) -> bool {
         true
     }
 
-    fn write(&mut self, offset: usize, data: &[u8]) {
-        self.1(offset, data);
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
+        self.1(offset, data).into_result()
     }
 }
 
@@ -249,12 +277,12 @@ impl<'a> Attribute<'a> {
         }
     }
 
-    pub(crate) fn value(&mut self) -> Data {
+    pub(crate) fn value(&mut self) -> Result<Data, AttErrorCode> {
         let mut data = Data::default();
         if self.data.readable() {
-            let len = self.data.read(0, data.as_slice_mut());
+            let len = self.data.read(0, data.as_slice_mut())?;
             data.append_len(len);
         }
-        data
+        Ok(data)
     }
 }
