@@ -4,6 +4,7 @@ use std::{assert_matches::assert_matches, cell::RefCell};
 
 extern crate std;
 
+use bleps::ad_structure::AdvertisementDataError;
 use bleps::{
     acl::{AclPacket, BoundaryFlag, ControllerBroadcastFlag, HostBroadcastFlag},
     ad_structure::{
@@ -563,19 +564,32 @@ fn create_advertising_data_works() {
     let res = create_advertising_data(&[
         AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
         AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-        AdStructure::CompleteLocalName("BL-602 Ble-Example!"),
-    ]);
+        AdStructure::CompleteLocalName("Ble-Example!"),
+    ])
+    .unwrap();
 
     println!("{:x?}", res);
 
     assert_matches!(
         res.as_slice(),
         &[
-            0x1c, 0x02, 0x01, 0x06, 0x03, 0x02, 0x09, 0x18, 0x14, 0x09, 0x42, 0x4C, 0x2D, 0x36,
-            0x30, 0x32, 0x20, 0x42, 0x6C, 0x65, 0x2D, 0x45, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,
-            0x21, 0x00, 0x00, 0x00
+            21, 2, 1, 6, 3, 2, 9, 24, 13, 9, 66, 108, 101, 45, 69, 120, 97, 109, 112, 108, 101, 33,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ]
     );
+}
+
+#[test]
+fn create_advertising_data_fails() {
+    let res = create_advertising_data(&[
+        AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+        AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
+        AdStructure::CompleteLocalName(
+            "Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!",
+        ),
+    ]);
+
+    assert_matches!(res, Err(AdvertisementDataError::TooLong));
 }
 
 #[test]
