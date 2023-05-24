@@ -2,7 +2,10 @@ use bleps_macros::gatt;
 
 #[test]
 fn test() {
-    let mut my_read_function = || &b"Hello"[..];
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(&b"Hola!"[..]);
+        5
+    };
     let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
@@ -21,7 +24,10 @@ fn test() {
 
 #[test]
 fn test2() {
-    let mut my_read_function = || &b"Hello"[..];
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..6].copy_from_slice(&b"Hello!"[..]);
+        6
+    };
     let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
@@ -40,7 +46,10 @@ fn test2() {
 
 #[test]
 fn test3() {
-    let mut my_read_function = || &b"Hello"[..];
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(&b"Hola!"[..]);
+        5
+    };
     let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
@@ -60,7 +69,10 @@ fn test3() {
 
 #[test]
 fn test4() {
-    let mut my_read_function = || &b"Hello"[..];
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(&b"Hola!"[..]);
+        5
+    };
     let mut my_write_function = |_offset, data: &[u8]| {
         println!("{:?}", data);
     };
