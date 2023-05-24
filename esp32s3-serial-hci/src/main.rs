@@ -6,10 +6,10 @@
 use embedded_io::blocking::{Read, Write};
 use esp32s3_hal::{
     clock::{ClockControl, CpuClock},
-    pac::Peripherals,
+    peripherals::Peripherals,
     prelude::*,
     timer::TimerGroup,
-    Rng, Rtc, Serial,
+    Rng, Rtc, Uart,
 };
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
@@ -17,31 +17,45 @@ use esp_wifi::ble::controller::BleConnector;
 
 const CNT: usize = 5000;
 
-#[xtensa_lx_rt::entry]
+#[entry]
 fn main() -> ! {
     init_logger(log::LevelFilter::Off);
-    esp_wifi::init_heap();
 
-    let peripherals = Peripherals::take().unwrap();
-    let system = peripherals.SYSTEM.split();
+    let peripherals = Peripherals::take();
+    let mut system = peripherals.SYSTEM.split();
     let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock240MHz).freeze();
 
     // Disable the RTC and TIMG watchdog timers
     let mut rtc = Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+    let timer_group0 = TimerGroup::new(
+        peripherals.TIMG0,
+        &clocks,
+        &mut system.peripheral_clock_control,
+    );
     let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    let timer_group1 = TimerGroup::new(
+        peripherals.TIMG1,
+        &clocks,
+        &mut system.peripheral_clock_control,
+    );
     let mut wdt1 = timer_group1.wdt;
 
     rtc.rwdt.disable();
     wdt0.disable();
     wdt1.disable();
 
-    esp_wifi::initialize(timer_group1.timer0, Rng::new(peripherals.RNG), &clocks).unwrap();
+    let bt = peripherals.RADIO.split().1;
+    esp_wifi::initialize(
+        timer_group1.timer0,
+        Rng::new(peripherals.RNG),
+        system.radio_clock_control,
+        &clocks,
+    )
+    .unwrap();
 
-    let mut connector = BleConnector {};
+    let mut connector = BleConnector::new(bt);
 
-    let mut serial = Serial::new(peripherals.UART0);
+    let mut serial = Uart::new(peripherals.UART0, &mut system.peripheral_clock_control);
 
     serial.write(0xff).unwrap();
 

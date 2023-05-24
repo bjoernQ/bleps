@@ -9,14 +9,9 @@ license = "MIT OR Apache-2.0"
 opt-level = 3
 
 [dependencies]
-esp32s3-hal = "0.4.0"
-esp-backtrace = { version = "0.4.0", features = ["esp32s3", "panic-handler", "print-uart"] }
-esp-println = { version = "0.3.1", features = [ "esp32s3", "log" ] }
-xtensa-lx-rt = { version = "0.14.0", features = ["esp32s3"], optional = true }
-esp-wifi = { git = "https://github.com/esp-rs/esp-wifi", rev = "dbcd5ea4989ff7c295b799c1beb6ffecd78518e3", features = ["esp32s3", "ble"] }
-embedded-io = "0.3.1"
+esp32s3-hal = "0.9.0"
+esp-backtrace = { version = "0.7.0", features = ["esp32s3", "panic-handler", "print-uart"] }
+esp-println = { version = "0.5.0", features = [ "esp32s3", "log" ] }
+esp-wifi = { git = "https://github.com/esp-rs/esp-wifi", rev = "dad30df82aabc76e81c341845f260d5049e0f304", features = ["esp32s3", "ble"] }
+embedded-io = "0.4.0"
 log = "0.4.17"
-
-[features]
-default = ["rt"]
-rt = ["xtensa-lx-rt"]
