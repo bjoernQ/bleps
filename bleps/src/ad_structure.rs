@@ -7,6 +7,11 @@ pub const SIMUL_LE_BR_CONTROLLER: u8 = 0b00001000;
 pub const SIMUL_LE_BR_HOST: u8 = 0b00010000;
 
 #[derive(Debug, Copy, Clone)]
+pub enum AdvertisementDataError {
+    TooLong,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum AdStructure<'a> {
     /// Device flags and baseband capabilities.
     ///
@@ -94,7 +99,7 @@ impl Data {
     }
 }
 
-pub fn create_advertising_data(ad: &[AdStructure]) -> Data {
+pub fn create_advertising_data(ad: &[AdStructure]) -> Result<Data, AdvertisementDataError> {
     let mut data = Data::default();
     data.append(&[0]);
 
@@ -105,9 +110,13 @@ pub fn create_advertising_data(ad: &[AdStructure]) -> Data {
     let len = data.len - 1;
     data.set(0, len as u8);
 
+    if len > 31 {
+        return Err(AdvertisementDataError::TooLong);
+    }
+
     for _ in 0..(31 - len) {
         data.append(&[0]);
     }
 
-    data
+    Ok(data)
 }

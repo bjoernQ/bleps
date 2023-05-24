@@ -4,17 +4,18 @@ use std::{assert_matches::assert_matches, cell::RefCell};
 
 extern crate std;
 
+use bleps::ad_structure::AdvertisementDataError;
 use bleps::{
-    acl::{encode_acl_packet, AclPacket, BoundaryFlag, ControllerBroadcastFlag, HostBroadcastFlag},
+    acl::{AclPacket, BoundaryFlag, ControllerBroadcastFlag, HostBroadcastFlag},
     ad_structure::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
-    att::{parse_att, Att, AttErrorCode, Uuid, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE},
+    att::{Att, AttErrorCode, Uuid, ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE},
     attribute::Attribute,
     attribute_server::{AttributeServer, CHARACTERISTIC_UUID16, PRIMARY_SERVICE_UUID16},
-    command::{create_command_data, Command, CommandHeader},
+    command::{Command, CommandHeader},
     event::{ErrorCode, EventType},
-    l2cap::{encode_l2cap, parse_l2cap},
+    l2cap::L2capPacket,
     Ble, Data, HciConnection, PollResult,
 };
 
@@ -243,14 +244,14 @@ pub fn command_header_set_adv_param_works() {
 
 #[test]
 fn create_reset_command_works() {
-    let data = create_command_data(Command::Reset);
+    let data = Command::Reset.encode();
     assert_eq!(data.len, 4);
     assert_eq!(data.data[0..4], [0x01, 0x03, 0x0c, 0x00]);
 }
 
 #[test]
 fn create_le_set_advertising_parameters_works() {
-    let data = create_command_data(Command::LeSetAdvertisingParameters);
+    let data = Command::LeSetAdvertisingParameters.encode();
     assert_eq!(data.len, 19);
     assert_eq!(
         data.data[..19],
@@ -272,9 +273,10 @@ fn set_advertising_parameters_works() {
 
 #[test]
 fn create_le_set_advertising_data_works() {
-    let data = create_command_data(Command::LeSetAdvertisingData {
+    let data = Command::LeSetAdvertisingData {
         data: Data::new(&[1, 2, 3, 4, 5]),
-    });
+    }
+    .encode();
     assert_eq!(data.len, 9);
     assert_eq!(data.data[..9], [0x01, 0x08, 0x20, 0x05, 1, 2, 3, 4, 5]);
 }
@@ -293,7 +295,7 @@ fn le_set_advertising_data_works() {
 
 #[test]
 fn create_le_set_advertise_enable_works() {
-    let data = create_command_data(Command::LeSetAdvertiseEnable(true));
+    let data = Command::LeSetAdvertiseEnable(true).encode();
     assert_eq!(data.len, 5);
     assert_eq!(data.data[..5], [0x01, 0x0a, 0x20, 0x01, 0x01]);
 }
@@ -385,7 +387,7 @@ fn receiving_read_by_group_type_works() {
         Some(res) => match res {
             PollResult::Event(_) => assert!(true, "Expected async data"),
             PollResult::AsyncData(res) => {
-                let res = parse_att(parse_l2cap(res).unwrap().1);
+                let res = Att::decode(L2capPacket::decode(res).unwrap().1);
                 assert_matches!(
                     res,
                     Ok(Att::ReadByGroupTypeReq {
@@ -417,8 +419,8 @@ fn create_read_by_group_type_resp_acl_works() {
     let mut res = Data::new_att_read_by_group_type_response();
     res.append_att_read_by_group_type_response(0x0001, 0x0010, &Uuid::Uuid16(0x1801));
     res.append_att_read_by_group_type_response(0x0020, 0x0030, &Uuid::Uuid16(0x1802));
-    let res = encode_l2cap(res);
-    let res = encode_acl_packet(
+    let res = L2capPacket::encode(res);
+    let res = AclPacket::encode(
         0x0000,
         BoundaryFlag::FirstAutoFlushable,
         HostBroadcastFlag::NoBroadcast,
@@ -460,7 +462,7 @@ fn receiving_read_by_type_works() {
         Some(res) => match res {
             PollResult::Event(_) => assert!(true, "Expected async data"),
             PollResult::AsyncData(res) => {
-                let res = parse_att(parse_l2cap(res).unwrap().1);
+                let res = Att::decode(L2capPacket::decode(res).unwrap().1);
                 assert_matches!(
                     res,
                     Ok(Att::ReadByTypeReq {
@@ -506,7 +508,7 @@ fn receiving_read_works() {
         Some(res) => match res {
             PollResult::Event(_) => assert!(true, "Expected async data"),
             PollResult::AsyncData(res) => {
-                let res = parse_att(parse_l2cap(res).unwrap().1);
+                let res = Att::decode(L2capPacket::decode(res).unwrap().1);
                 assert_matches!(res, Ok(Att::ReadReq { handle: 0x03 }))
             }
         },
@@ -536,7 +538,7 @@ fn receiving_write_works() {
         Some(res) => match res {
             PollResult::Event(_) => assert!(true, "Expected async data"),
             PollResult::AsyncData(res) => {
-                let res = parse_att(parse_l2cap(res).unwrap().1);
+                let res = Att::decode(L2capPacket::decode(res).unwrap().1);
                 assert_matches!(
                     res,
                     Ok(Att::WriteReq {
@@ -562,19 +564,32 @@ fn create_advertising_data_works() {
     let res = create_advertising_data(&[
         AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
         AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-        AdStructure::CompleteLocalName("BL-602 Ble-Example!"),
-    ]);
+        AdStructure::CompleteLocalName("Ble-Example!"),
+    ])
+    .unwrap();
 
     println!("{:x?}", res);
 
     assert_matches!(
         res.as_slice(),
         &[
-            0x1c, 0x02, 0x01, 0x06, 0x03, 0x02, 0x09, 0x18, 0x14, 0x09, 0x42, 0x4C, 0x2D, 0x36,
-            0x30, 0x32, 0x20, 0x42, 0x6C, 0x65, 0x2D, 0x45, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,
-            0x21, 0x00, 0x00, 0x00
+            21, 2, 1, 6, 3, 2, 9, 24, 13, 9, 66, 108, 101, 45, 69, 120, 97, 109, 112, 108, 101, 33,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ]
     );
+}
+
+#[test]
+fn create_advertising_data_fails() {
+    let res = create_advertising_data(&[
+        AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+        AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
+        AdStructure::CompleteLocalName(
+            "Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!Ble-Example!",
+        ),
+    ]);
+
+    assert_matches!(res, Err(AdvertisementDataError::TooLong));
 }
 
 #[test]
