@@ -31,3 +31,6 @@ jobs:
       - run: cargo check --manifest-path=bleps/Cargo.toml
       - run: cargo check --manifest-path=bleps/Cargo.toml --features=async
       - run: cargo check --manifest-path=bleps/Cargo.toml --features=macros
+
+      - run: cargo test --manifest-path=bleps/Cargo.toml
+      - run: cargo test --manifest-path=bleps-macros/Cargo.toml
