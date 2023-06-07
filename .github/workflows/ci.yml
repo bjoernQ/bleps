@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# Cancel any currently running workflows from the same PR, branch, or
+# tag when a new workflow is triggered.
+#
+# https://stackoverflow.com/a/66336834
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo check --manifest-path=bleps/Cargo.toml
+      - run: cargo check --manifest-path=bleps/Cargo.toml --features=async
+      - run: cargo check --manifest-path=bleps/Cargo.toml --features=macros
+
+      - run: cargo test --manifest-path=bleps/Cargo.toml
+      - run: cargo test --manifest-path=bleps-macros/Cargo.toml
