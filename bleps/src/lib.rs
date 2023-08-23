@@ -42,6 +42,20 @@ pub enum Error {
     Failed(u8),
 }
 
+#[cfg(feature = "defmt")]
+impl defmt::Format for Error {
+    fn format(&self, fmt: defmt::Formatter) {
+        match self {
+            Error::Timeout => {
+                defmt::write!(fmt, "Timeout")
+            }
+            Error::Failed(value) => {
+                defmt::write!(fmt, "Failed({})", value)
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum PollResult {
     Event(EventType),
