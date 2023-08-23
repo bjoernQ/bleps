@@ -18,7 +18,8 @@ categories = [
 
 [dependencies]
 log = "0.4.16"
-embedded-io = { version = "0.4.0", features = ["async"] }
+embedded-io-blocking = { package = "embedded-io", version = "0.5.0" }
+embedded-io-async = { version = "0.5.0", optional = true }
 futures = { version = "0.3", default-features = false, optional = true }
 critical-section = { version = "1.0.1", optional = true }
 bleps-macros = { path = "../bleps-macros", optional = true }
@@ -27,5 +28,5 @@ bleps-macros = { path = "../bleps-macros", optional = true }
 env_logger = "0.10.0"
 
 [features]
-async = [ "embedded-io/async", "dep:futures", "dep:critical-section" ]
+async = [ "embedded-io-async", "dep:futures", "dep:critical-section" ]
 macros = [ "bleps-macros" ]

@@ -53,7 +53,7 @@ impl AclPacket {
     #[cfg(feature = "async")]
     pub async fn async_read<T>(connector: &mut T) -> Self
     where
-        T: embedded_io::asynch::Read,
+        T: embedded_io_async::Read,
     {
         let mut raw_handle_buffer = [0u8; 2];
         let _raw_handle_len = connector.read(&mut raw_handle_buffer).await.unwrap();

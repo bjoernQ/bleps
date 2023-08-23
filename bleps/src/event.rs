@@ -143,7 +143,7 @@ impl EventType {
     /// Reads and decodes an event and assumes the packet type (0x04) is already read.
     pub async fn async_read<T>(connector: &mut T) -> Self
     where
-        T: embedded_io::asynch::Read,
+        T: embedded_io_async::Read,
     {
         let event = Event::async_read(connector).await;
 
@@ -206,7 +206,7 @@ impl Event {
     #[cfg(feature = "async")]
     async fn async_read<T>(connector: &mut T) -> Self
     where
-        T: embedded_io::asynch::Read,
+        T: embedded_io_async::Read,
     {
         let mut buffer = [0u8];
         let _code_len = connector.read(&mut buffer).await.unwrap();

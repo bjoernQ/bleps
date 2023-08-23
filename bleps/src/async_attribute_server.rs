@@ -23,7 +23,7 @@ use crate::{
 
 pub struct AttributeServer<'a, T>
 where
-    T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+    T: embedded_io_async::Read + embedded_io_async::Write,
 {
     ble: &'a mut Ble<T>,
     src_handle: u16,
@@ -32,7 +32,7 @@ where
 
 impl<'a, T> AttributeServer<'a, T>
 where
-    T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+    T: embedded_io_async::Read + embedded_io_async::Write,
 {
     pub fn new(ble: &'a mut Ble<T>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a, T> {
         for (i, attr) in attributes.iter_mut().enumerate() {
