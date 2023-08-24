@@ -13,10 +13,8 @@ use bleps::{
     attribute_server::{AttributeServer, NotificationData, WorkResult},
     gatt, Ble, HciConnector,
 };
-use embedded_io::{
-    blocking::{Read, Write},
-    Error, Io,
-};
+use embedded_io_adapters::std::FromStd;
+use embedded_io_blocking::{Error, ErrorType, Read, Write};
 
 fn main() {
     env_logger::init();
@@ -35,7 +33,7 @@ fn main() {
 
     println!("Reset the target");
 
-    let mut serial = embedded_io::adapters::FromStd::new(port);
+    let mut serial = FromStd::new(port);
 
     let mut buffer = [0u8; 1];
 
@@ -231,12 +229,12 @@ pub enum BleConnectorError {
 }
 
 impl Error for BleConnectorError {
-    fn kind(&self) -> embedded_io::ErrorKind {
-        embedded_io::ErrorKind::Other
+    fn kind(&self) -> embedded_io_blocking::ErrorKind {
+        embedded_io_blocking::ErrorKind::Other
     }
 }
 
-impl<'a, T> Io for BleConnector<'a, T>
+impl<'a, T> ErrorType for BleConnector<'a, T>
 where
     T: Read + Write,
 {

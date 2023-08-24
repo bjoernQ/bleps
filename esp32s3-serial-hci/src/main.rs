@@ -3,7 +3,7 @@
 #![no_std]
 #![no_main]
 
-use embedded_io::blocking::{Read, Write};
+use embedded_io_blocking::{Read, Write};
 use esp32s3_hal::{
     clock::{ClockControl, CpuClock},
     peripherals::Peripherals,

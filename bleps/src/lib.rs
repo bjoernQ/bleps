@@ -10,7 +10,7 @@ use command::{
     opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
-use embedded_io::blocking::{Read, Write};
+use embedded_io_blocking::{Read, Write};
 use event::EventType;
 
 pub mod acl;
@@ -40,6 +40,20 @@ const TIMEOUT_MILLIS: u64 = 1000;
 pub enum Error {
     Timeout,
     Failed(u8),
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Error {
+    fn format(&self, fmt: defmt::Formatter) {
+        match self {
+            Error::Timeout => {
+                defmt::write!(fmt, "Timeout")
+            }
+            Error::Failed(value) => {
+                defmt::write!(fmt, "Failed({})", value)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -411,7 +425,7 @@ pub mod asynch {
 
     pub struct Ble<T>
     where
-        T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+        T: embedded_io_async::Read + embedded_io_async::Write,
     {
         hci: RefCell<T>,
         get_millis: fn() -> u64,
@@ -419,7 +433,7 @@ pub mod asynch {
 
     impl<T> Ble<T>
     where
-        T: embedded_io::asynch::Read + embedded_io::asynch::Write,
+        T: embedded_io_async::Read + embedded_io_async::Write,
     {
         pub fn new(hci: T, get_millis: fn() -> u64) -> Ble<T> {
             Ble {
@@ -574,7 +588,7 @@ pub mod asynch {
     impl Data {
         pub(crate) async fn async_read<T>(mut connector: T, len: usize) -> Self
         where
-            T: embedded_io::asynch::Read,
+            T: embedded_io_async::Read,
         {
             let mut idx = 0;
             let mut data = [0u8; 128];
