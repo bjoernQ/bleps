@@ -3,7 +3,7 @@
 #![no_std]
 #![no_main]
 
-use embedded_io_blocking::{Read, Write};
+use embedded_io_blocking::blocking::{Read, Write};
 use esp32s3_hal::{
     clock::{ClockControl, CpuClock},
     peripherals::Peripherals,
@@ -13,7 +13,7 @@ use esp32s3_hal::{
 };
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
-use esp_wifi::ble::controller::BleConnector;
+use esp_wifi::{ble::controller::BleConnector, EspWifiInitFor};
 
 const CNT: usize = 5000;
 

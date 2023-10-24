@@ -15,6 +15,7 @@ pub enum L2capDecodeError {
 impl L2capPacket {
     pub fn decode(packet: AclPacket) -> Result<(u16, Self), L2capDecodeError> {
         let data = packet.data.as_slice();
+        log::info!("{:02x?}", data);
         let length = (data[0] as u16) + ((data[1] as u16) << 8);
         let channel = (data[2] as u16) + ((data[3] as u16) << 8);
         let payload = Data::new(&data[4..]);
@@ -33,6 +34,20 @@ impl L2capPacket {
         let mut data = Data::new(&[
             0, 0, // len set later
             0x04, 0x00, // channel
+        ]);
+        data.append(att_data.as_slice());
+
+        let len = data.len - 4;
+        data.set(0, (len & 0xff) as u8);
+        data.set(1, ((len >> 8) & 0xff) as u8);
+
+        data
+    }
+
+    pub fn encode_sm(att_data: Data) -> Data {
+        let mut data = Data::new(&[
+            0, 0, // len set later
+            0x06, 0x00, // channel
         ]);
         data.append(att_data.as_slice());
 

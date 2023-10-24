@@ -23,6 +23,21 @@ pub enum EventType {
         connection_handles: u16, // should be list
         completed_packets: u16,  // should be list
     },
+    ConnectionComplete {
+        status: u8,
+        handle: u16,
+        role: u8,
+        peer_address_type: u8,
+        peer_address: [u8; 6],
+        interval: u16,
+        latency: u16,
+        timeout: u16,
+    },
+    LongTermKeyRequest {
+        handle: u16,
+        random: u64,
+        diversifier: u16,
+    },
     Unknown,
 }
 
@@ -70,6 +85,10 @@ impl ErrorCode {
 const EVENT_COMMAND_COMPLETE: u8 = 0x0e;
 const EVENT_DISCONNECTION_COMPLETE: u8 = 0x05;
 const EVENT_NUMBER_OF_COMPLETED_PACKETS: u8 = 0x13;
+const EVENT_LE_META: u8 = 0x3e;
+const EVENT_LE_META_CONNECTION_COMPLETE: u8 = 0x01;
+// TODO ENHANCED_CONNECTION_COMPLETE
+const EVENT_LE_META_LONG_TERM_KEY_REQUEST: u8 = 0x05;
 
 impl EventType {
     pub fn check_command_completed(self) -> Result<Self, Error> {
@@ -126,6 +145,52 @@ impl EventType {
                     number_of_connection_handles: num_handles,
                     connection_handles: connection_handle,
                     completed_packets: completed_packet,
+                }
+            }
+            EVENT_LE_META => {
+                let sub_event = event.data.as_slice()[0];
+                let data = &event.data.as_slice()[1..];
+
+                match sub_event {
+                    EVENT_LE_META_CONNECTION_COMPLETE => {
+                        let status = data[0];
+                        let handle = ((data[2] as u16) << 8) + data[1] as u16;
+                        let role = data[3];
+                        let peer_address_type = data[4];
+                        let peer_address = data[5..][..6].try_into().unwrap();
+                        let interval = ((data[2] as u16) << 8) + data[1] as u16;
+                        let latency = ((data[2] as u16) << 8) + data[1] as u16;
+                        let timeout = ((data[2] as u16) << 8) + data[1] as u16;
+
+                        Self::ConnectionComplete {
+                            status,
+                            handle,
+                            role,
+                            peer_address_type,
+                            peer_address,
+                            interval,
+                            latency,
+                            timeout,
+                        }
+                    }
+                    EVENT_LE_META_LONG_TERM_KEY_REQUEST => {
+                        let handle = ((data[1] as u16) << 8) + data[0] as u16;
+                        let random = u64::from_be_bytes((&data[2..][..8]).try_into().unwrap());
+                        let diversifier = ((data[11] as u16) << 8) + data[10] as u16;
+                        Self::LongTermKeyRequest {
+                            handle,
+                            random,
+                            diversifier,
+                        }
+                    }
+                    _ => {
+                        log::warn!(
+                            "Ignoring unknown le-meta event {:02x} data = {:02x?}",
+                            sub_event,
+                            data
+                        );
+                        Self::Unknown
+                    }
                 }
             }
             _ => {
