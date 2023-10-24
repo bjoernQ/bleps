@@ -7,7 +7,8 @@ use core::cell::RefCell;
 
 use acl::AclPacket;
 use command::{
-    opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
+    opcode, Command, INFORMATIONAL_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF, READ_BD_ADDR_OCF,
+    SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
 use embedded_io_blocking::{Read, Write};
@@ -24,6 +25,9 @@ pub mod ad_structure;
 
 pub mod attribute;
 pub mod attribute_server;
+
+pub mod crypto;
+pub mod sm;
 
 #[cfg(feature = "async")]
 pub mod async_attribute_server;
@@ -219,11 +223,12 @@ impl<'a> Ble<'a> {
         Ble { connector }
     }
 
-    pub fn init(&mut self) -> Result<EventType, Error>
+    pub fn init(&mut self) -> Result<(), Error>
     where
         Self: Sized,
     {
-        Ok(self.cmd_reset()?)
+        self.cmd_reset()?;
+        Ok(())
     }
 
     pub fn cmd_reset(&mut self) -> Result<EventType, Error>
@@ -287,6 +292,47 @@ impl<'a> Ble<'a> {
             .check_command_completed()
     }
 
+    pub fn cmd_long_term_key_request_reply(
+        &mut self,
+        handle: u16,
+        ltk: u128,
+    ) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+        self.write_bytes(
+            Command::LeLongTermKeyRequestReply { handle, ltk }
+                .encode()
+                .as_slice(),
+        );
+        log::info!("done writing command");
+        let res = self
+            .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF)?
+            .check_command_completed();
+        log::info!("got completion event");
+
+        res
+    }
+
+    pub fn cmd_read_br_addr(&mut self) -> Result<[u8; 6], Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(Command::ReadBrAddr.encode().as_slice());
+        let res = self
+            .wait_for_command_complete(INFORMATIONAL_OGF, READ_BD_ADDR_OCF)?
+            .check_command_completed()?;
+        match res {
+            EventType::CommandComplete {
+                num_packets: _,
+                opcode: _,
+                data,
+            } => Ok(data.as_slice()[1..][..6].try_into().unwrap()),
+            _ => Err(Error::Failed(0)),
+        }
+    }
+
     fn wait_for_command_complete(&mut self, ogf: u8, ocf: u16) -> Result<EventType, Error>
     where
         Self: Sized,
@@ -294,6 +340,9 @@ impl<'a> Ble<'a> {
         let timeout_at = self.connector.millis() + TIMEOUT_MILLIS;
         loop {
             let res = self.poll();
+            if res.is_some() {
+                log::info!("polled while waiting {:?}", res);
+            }
 
             match res {
                 Some(PollResult::Event(event)) => match event {

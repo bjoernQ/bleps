@@ -162,7 +162,7 @@ fn init_works() {
 
     let res = ble.init();
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x0c03, data}) if data.as_slice() == &[0]);
+    assert_matches!(res, Ok(()));
 
     assert_eq!(connector.get_write_idx(), 4);
     assert_eq!(connector.get_to_write_at(0), 0x01);

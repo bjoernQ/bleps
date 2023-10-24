@@ -8,9 +8,13 @@ pub const SET_ADVERTISING_PARAMETERS_OCF: u16 = 0x06;
 pub const SET_ADVERTISING_DATA_OCF: u16 = 0x08;
 pub const SET_SCAN_RSP_DATA_OCF: u16 = 0x09;
 pub const SET_ADVERTISE_ENABLE_OCF: u16 = 0x0a;
+pub const LONG_TERM_KEY_REQUEST_REPLY_OCF: u16 = 0x1a;
 
 pub const LINK_CONTROL_OGF: u8 = 0x01;
 pub const DISCONNECT_OCF: u16 = 0x06;
+
+pub const INFORMATIONAL_OGF: u8 = 0x04;
+pub const READ_BD_ADDR_OCF: u16 = 0x09;
 
 #[derive(Debug)]
 pub struct CommandHeader {
@@ -58,12 +62,15 @@ pub enum Command<'a> {
     LeSetScanRspData { data: Data },
     LeSetAdvertiseEnable(bool),
     Disconnect { connection_handle: u16, reason: u8 },
+    LeLongTermKeyRequestReply { handle: u16, ltk: u128 },
+    ReadBrAddr,
 }
 
 impl<'a> Command<'a> {
     pub fn encode(self) -> Data {
         match self {
             Command::Reset => {
+                log::info!("encode reset command");
                 let mut data = [0u8; 4];
                 data[0] = 0x01;
                 CommandHeader::from_ogf_ocf(CONTROLLER_OGF, RESET_OCF, 0x00)
@@ -134,6 +141,23 @@ impl<'a> Command<'a> {
                     .write_into(&mut data[1..]);
                 data[4..][..2].copy_from_slice(&connection_handle.to_le_bytes());
                 data[6] = reason;
+                Data::new(&data)
+            }
+            Command::LeLongTermKeyRequestReply { handle, ltk } => {
+                let mut data = [0u8; 22];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF, 18)
+                    .write_into(&mut data[1..]);
+                data[4..][..2].copy_from_slice(&handle.to_le_bytes());
+                data[6..].copy_from_slice(&ltk.to_le_bytes());
+                Data::new(&data)
+            }
+            Command::ReadBrAddr => {
+                log::info!("command read br addr");
+                let mut data = [0u8; 4];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(INFORMATIONAL_OGF, READ_BD_ADDR_OCF, 0x00)
+                    .write_into(&mut data[1..]);
                 Data::new(&data)
             }
         }

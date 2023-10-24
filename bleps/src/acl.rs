@@ -40,6 +40,7 @@ impl AclPacket {
         let (pb, bc, handle) = Self::decode_raw_handle(raw_handle_buffer);
 
         let len = u16::from_le_bytes([connector.read().unwrap(), connector.read().unwrap()]);
+        log::info!("read len {}", len);
         let data = Data::read(connector, len as usize);
 
         Self {

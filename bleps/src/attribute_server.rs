@@ -10,6 +10,7 @@ use crate::{
     command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
     l2cap::{L2capDecodeError, L2capPacket},
+    sm::SecurityManager,
     Ble, Data, Error,
 };
 
@@ -63,6 +64,8 @@ pub struct AttributeServer<'a> {
     ble: &'a mut Ble<'a>,
     src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
+
+    security_manager: SecurityManager,
 }
 
 // Using the bleps-dedup proc-macro to de-duplicate the async/sync code
@@ -137,20 +140,48 @@ bleps_dedup::dedup! {
             match packet {
                 None => Ok(WorkResult::DidWork),
                 Some(packet) => match packet {
-                    crate::PollResult::Event(evt) => {
-                        if let EventType::DisconnectComplete {
-                            handle: _,
-                            status: _,
-                            reason: _,
-                        } = evt
-                        {
-                            Ok(WorkResult::GotDisconnected)
-                        } else {
-                            Ok(WorkResult::DidWork)
+                    crate::PollResult::Event(EventType::DisconnectComplete {
+                        handle: _,
+                        status: _,
+                        reason: _,
+                    }) => Ok(WorkResult::GotDisconnected),
+                    crate::PollResult::Event(EventType::ConnectionComplete {
+                        status,
+                        handle: _,
+                        role: _,
+                        peer_address_type: _,
+                        peer_address,
+                        interval: _,
+                        latency: _,
+                        timeout: _,
+                    }) => {
+                        if status == 0 {
+                            self.security_manager.peer_address = Some(peer_address);
                         }
+                        Ok(WorkResult::DidWork)
                     }
+                    crate::PollResult::Event(EventType::LongTermKeyRequest {
+                        handle,
+                        random: _,
+                        diversifier: _,
+                    }) => {
+                        self.ble
+                            .cmd_long_term_key_request_reply(
+                                handle,
+                                self.security_manager.ltk.unwrap(),
+                            )
+                            .unwrap();
+                        Ok(WorkResult::DidWork)
+                    }
+                    crate::PollResult::Event(_) => Ok(WorkResult::DidWork),
                     crate::PollResult::AsyncData(packet) => {
                         let (src_handle, l2cap_packet) = L2capPacket::decode(packet)?;
+                        if l2cap_packet.channel == 6 {
+                            // handle SM
+                            self.security_manager
+                                .handle(self.ble, src_handle, l2cap_packet.payload);
+                            Ok(WorkResult::DidWork)
+                        } else {
                         let packet = Att::decode(l2cap_packet)?;
                         log::trace!("att: {:x?}", packet);
                         match packet {
@@ -231,9 +262,11 @@ bleps_dedup::dedup! {
                                 self.handle_read_blob(src_handle, handle, offset).await;
                             }
                         }
+                    
 
                         Ok(WorkResult::DidWork)
                     }
+                }
                 },
             }
         }
@@ -514,6 +547,11 @@ bleps_dedup::dedup! {
 
 impl<'a> AttributeServer<'a> {
     pub fn new(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a> {
+        AttributeServer::new_with_ltk(ble,attributes, [0u8;6], None)
+    }
+
+    /// Create a new instance, optionally provide an LTK
+    pub fn new_with_ltk(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>], local_addr: [u8;6], ltk: Option<u128>) -> AttributeServer<'a> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
         }
@@ -529,12 +567,24 @@ impl<'a> AttributeServer<'a> {
 
         log::trace!("{:#x?}", &attributes);
 
+        let mut security_manager = SecurityManager::default();
+        security_manager.local_address = Some(local_addr);
+        security_manager.ltk = ltk;
+
         AttributeServer {
             ble,
             src_handle: 0,
             attributes,
+
+            security_manager,
         }
     }
+
+    /// Get the current LTK
+    pub fn get_ltk(&self) -> Option<u128> {
+        self.security_manager.ltk
+    }
+
 }
 
 #[derive(Debug)]
