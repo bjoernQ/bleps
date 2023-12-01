@@ -236,6 +236,11 @@ where
                             self.handle_read_req(src_handle, handle).await;
                         }
 
+                        Att::WriteCmd { handle, data } => {
+                            self.src_handle = handle;
+                            self.handle_write_cmd(src_handle, handle, data).await;
+                        }
+
                         Att::WriteReq { handle, data } => {
                             self.src_handle = src_handle;
                             self.handle_write_req(src_handle, handle, data).await;
@@ -395,6 +400,21 @@ where
         self.write_att(src_handle, response).await;
     }
 
+    async fn handle_write_cmd(&mut self, _src_handle: u16, handle: u16, data: Data) {
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                if att.data.writable() {
+                    // Write commands can't respond with an error.
+                    let err = att.data.write(0, data.as_slice());
+                    if let Err(e) = err {
+                        log::debug!("write error: {e:?}");
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     async fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
         let mut err = Err(AttErrorCode::AttributeNotFound);
         for att in self.attributes.iter_mut() {
@@ -414,10 +434,9 @@ where
     }
 
     async fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
-        log::debug!("Requested MTU {}, returning 23", mtu);
+        log::debug!("Requested MTU {mtu}, returning {MTU}");
         self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU))
             .await;
-        return;
     }
 
     async fn handle_find_type_value(

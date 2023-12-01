@@ -346,12 +346,15 @@ impl<'a> AttributeServer<'a> {
         self.write_att(src_handle, response);
     }
 
-    fn handle_write_cmd(&mut self, src_handle: u16, handle: u16, data: Data) {
-        let mut err = Err(AttErrorCode::AttributeNotFound);
+    fn handle_write_cmd(&mut self, _src_handle: u16, handle: u16, data: Data) {
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
                 if att.data.writable() {
-                    err = att.data.write(0, data.as_slice());
+                    // Write commands can't respond with an error.
+                    let err = att.data.write(0, data.as_slice());
+                    if let Err(e) = err {
+                        log::debug!("write error: {e:?}");
+                    }
                 }
                 break;
             }
@@ -379,7 +382,6 @@ impl<'a> AttributeServer<'a> {
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
         log::debug!("Requested MTU {mtu}, returning {MTU}");
         self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU));
-        return;
     }
 
     fn handle_find_type_value(
