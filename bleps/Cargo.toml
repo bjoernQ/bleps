@@ -32,3 +32,5 @@ env_logger = "0.10.0"
 async = [ "dep:embedded-io-async", "dep:futures", "dep:critical-section" ]
 macros = [ "bleps-macros" ]
 defmt = [ "dep:defmt" ]
+mtu128 = []
+mtu256 = []

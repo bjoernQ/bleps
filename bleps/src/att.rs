@@ -10,6 +10,7 @@ const ATT_READ_BY_TYPE_RESPONSE_OPCODE: u8 = 0x09;
 pub const ATT_READ_REQUEST_OPCODE: u8 = 0x0a;
 const ATT_READ_RESPONSE_OPCODE: u8 = 0x0b;
 pub const ATT_WRITE_REQUEST_OPCODE: u8 = 0x12;
+pub const ATT_WRITE_CMD_OPCODE: u8 = 0x52;
 const ATT_WRITE_RESPONSE_OPCODE: u8 = 0x13;
 pub const ATT_EXCHANGE_MTU_REQUEST_OPCODE: u8 = 0x02;
 const ATT_EXCHANGE_MTU_RESPONSE_OPCODE: u8 = 0x03;
@@ -150,6 +151,10 @@ pub enum Att {
         handle: u16,
         data: Data,
     },
+    WriteCmd {
+        handle: u16,
+        data: Data,
+    },
     ExchangeMtu {
         mtu: u16,
     },
@@ -243,6 +248,13 @@ impl Att {
                 data.append(&payload[2..]);
 
                 Ok(Self::WriteReq { handle, data })
+            }
+            ATT_WRITE_CMD_OPCODE => {
+                let handle = (payload[0] as u16) + ((payload[1] as u16) << 8);
+                let mut data = Data::default();
+                data.append(&payload[2..]);
+
+                Ok(Self::WriteCmd { handle, data })
             }
             ATT_EXCHANGE_MTU_REQUEST_OPCODE => {
                 let mtu = (payload[0] as u16) + ((payload[1] as u16) << 8);
