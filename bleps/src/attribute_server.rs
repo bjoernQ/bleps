@@ -17,6 +17,22 @@ pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
 pub const CHARACTERISTIC_UUID16: Uuid = Uuid::Uuid16(0x2803);
 pub const GENERIC_ATTRIBUTE_UUID16: Uuid = Uuid::Uuid16(0x1801);
 
+/// The base MTU that is always supported. The MTU can be upgraded
+/// per-connection. In the case of multiple connections, handling this
+/// correctly would involve keeping track of which connection was configured
+/// with which MTU. Instead of doing this, we always use the `BASE_MTU`
+/// when transmitting but in the MTU exchange we support reporting a larger MTU.
+/// This allows the client to use a larger MTU when transmitting to us, even
+/// though we always respond with the smaller MTU.
+pub const BASE_MTU: u16 = 23;
+
+#[cfg(feature = "mtu128")]
+pub const MTU: u16 = 128;
+
+#[cfg(feature = "mtu256")]
+pub const MTU: u16 = 256;
+
+#[cfg(not(any(feature = "mtu128", feature = "mtu256")))]
 pub const MTU: u16 = 23;
 
 #[derive(Debug, PartialEq)]
@@ -118,7 +134,7 @@ impl<'a> AttributeServer<'a> {
     ) -> Result<WorkResult, AttributeServerError> {
         if let Some(notification_data) = notification_data {
             let mut answer = notification_data.data;
-            answer.limit_len(MTU as usize - 3);
+            answer.limit_len(BASE_MTU as usize - 3);
             let mut data = Data::new_att_value_ntf(notification_data.handle);
             data.append(&answer.as_slice());
             self.write_att(self.src_handle, data);
@@ -173,6 +189,11 @@ impl<'a> AttributeServer<'a> {
                         Att::WriteReq { handle, data } => {
                             self.src_handle = src_handle;
                             self.handle_write_req(src_handle, handle, data);
+                        }
+
+                        Att::WriteCmd { handle, data } => {
+                            self.src_handle = src_handle;
+                            self.handle_write_cmd(src_handle, handle, data);
                         }
 
                         Att::ExchangeMtu { mtu } => {
@@ -316,13 +337,28 @@ impl<'a> AttributeServer<'a> {
 
         let response = match err {
             Ok(_) => {
-                data.limit_len(MTU as usize);
+                data.limit_len(BASE_MTU as usize);
                 data
             }
             Err(e) => Data::new_att_error_response(ATT_READ_REQUEST_OPCODE, handle, e),
         };
 
         self.write_att(src_handle, response);
+    }
+
+    fn handle_write_cmd(&mut self, _src_handle: u16, handle: u16, data: Data) {
+        for att in self.attributes.iter_mut() {
+            if att.handle == handle {
+                if att.data.writable() {
+                    // Write commands can't respond with an error.
+                    let err = att.data.write(0, data.as_slice());
+                    if let Err(e) = err {
+                        log::debug!("write error: {e:?}");
+                    }
+                }
+                break;
+            }
+        }
     }
 
     fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
@@ -344,9 +380,8 @@ impl<'a> AttributeServer<'a> {
     }
 
     fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
-        log::debug!("Requested MTU {}, returning 23", mtu);
+        log::debug!("Requested MTU {mtu}, returning {MTU}");
         self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU));
-        return;
     }
 
     fn handle_find_type_value(
@@ -448,7 +483,7 @@ impl<'a> AttributeServer<'a> {
 
         let response = match err {
             Ok(_) => {
-                data.limit_len(MTU as usize - 1);
+                data.limit_len(BASE_MTU as usize - 1);
                 data
             }
             Err(e) => Data::new_att_error_response(ATT_READ_BLOB_REQ_OPCODE, handle, e),

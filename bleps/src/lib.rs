@@ -64,13 +64,13 @@ pub enum PollResult {
 
 #[derive(Clone, Copy)]
 pub struct Data {
-    pub data: [u8; 128],
+    pub data: [u8; 256],
     pub len: usize,
 }
 
 impl Data {
     pub fn new(bytes: &[u8]) -> Data {
-        let mut data = [0u8; 128];
+        let mut data = [0u8; 256];
         data[..bytes.len()].copy_from_slice(bytes);
         Data {
             data,
@@ -105,7 +105,7 @@ impl Data {
     }
 
     pub fn subdata_from(&self, from: usize) -> Data {
-        let mut data = [0u8; 128];
+        let mut data = [0u8; 256];
         let new_len = self.len - from;
         data[..new_len].copy_from_slice(&self.data[from..(from + new_len)]);
         Data { data, len: new_len }
@@ -330,7 +330,7 @@ impl<'a> Ble<'a> {
                     return Some(PollResult::Event(event));
                 }
                 _ => {
-                    // this is an serious error
+                    // this is a serious error
                     panic!("Unknown packet type {}", packet_type);
                 }
             },
@@ -349,7 +349,7 @@ impl<'a> Ble<'a> {
 
 impl Data {
     fn read(connector: &dyn HciConnection, len: usize) -> Self {
-        let mut data = [0u8; 128];
+        let mut data = [0u8; 256];
         for i in 0..len {
             loop {
                 match connector.read() {
@@ -591,7 +591,7 @@ pub mod asynch {
             T: embedded_io_async::Read,
         {
             let mut idx = 0;
-            let mut data = [0u8; 128];
+            let mut data = [0u8; 256];
             loop {
                 let l = connector.read(&mut data[idx..][..len]).await.unwrap();
                 idx += l;
