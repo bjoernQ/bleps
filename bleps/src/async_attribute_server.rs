@@ -14,7 +14,7 @@ use crate::{
         ATT_READ_REQUEST_OPCODE, ATT_WRITE_REQUEST_OPCODE,
     },
     attribute::Attribute,
-    attribute_server::{AttributeServerError, NotificationData, WorkResult, MTU},
+    attribute_server::{AttributeServerError, NotificationData, WorkResult, BASE_MTU, MTU},
     command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
     l2cap::L2capPacket,
@@ -182,7 +182,7 @@ where
     ) -> Result<WorkResult, AttributeServerError> {
         if let Some(notification_data) = notification_data {
             let mut answer = notification_data.data;
-            answer.limit_len(MTU as usize - 3);
+            answer.limit_len(BASE_MTU as usize - 3);
             let mut data = Data::new_att_value_ntf(notification_data.handle);
             data.append(&answer.as_slice());
             self.write_att(self.src_handle, data).await;
@@ -322,7 +322,6 @@ where
                         &Uuid::from(val),
                     );
                 }
-
                 break;
             }
         }
@@ -333,7 +332,6 @@ where
                 Data::new_att_error_response(ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE, handle, e)
             }
         };
-
         self.write_att(src_handle, response).await;
     }
 
@@ -361,6 +359,7 @@ where
                         data.append_att_read_by_type_response();
                     }
                 }
+
                 log::debug!("found! {:x?} {}", att.uuid, att.handle);
                 break;
             }
@@ -379,7 +378,7 @@ where
 
         for att in self.attributes.iter_mut() {
             if att.handle == handle {
-                if att.handle == handle && att.data.readable() {
+                if att.data.readable() {
                     err = att.data.read(0, data.as_slice_mut());
                     if let Ok(len) = err {
                         data.append_len(len);
@@ -391,7 +390,7 @@ where
 
         let response = match err {
             Ok(_) => {
-                data.limit_len(MTU as usize);
+                data.limit_len(BASE_MTU as usize);
                 data
             }
             Err(e) => Data::new_att_error_response(ATT_READ_REQUEST_OPCODE, handle, e),
@@ -545,7 +544,7 @@ where
 
         let response = match err {
             Ok(_) => {
-                data.limit_len(MTU as usize - 1);
+                data.limit_len(BASE_MTU as usize - 1);
                 data
             }
             Err(e) => Data::new_att_error_response(ATT_READ_BLOB_REQ_OPCODE, handle, e),

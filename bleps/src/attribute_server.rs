@@ -411,12 +411,10 @@ impl<'a> AttributeServer<'a> {
         for att in self.attributes.iter_mut() {
             log::trace!("Check attribute {:x?} {}", att.uuid, att.handle);
             if att.handle >= start && att.handle <= end {
-                if att.handle >= start && att.handle <= end {
-                    if !data.append_att_find_information_response(att.handle, &att.uuid) {
-                        break;
-                    }
-                    log::debug!("found! {:x?} {}", att.uuid, att.handle);
+                if !data.append_att_find_information_response(att.handle, &att.uuid) {
+                    break;
                 }
+                log::debug!("found! {:x?} {}", att.uuid, att.handle);
             }
         }
 
