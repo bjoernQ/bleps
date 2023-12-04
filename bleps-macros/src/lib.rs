@@ -316,6 +316,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
                 let backing_data = format_ident!("_attr_data{}", current_handle);
                 pre.push(quote!(
+                    #[allow(non_upper_case_globals)]
                     static mut #backing_data: [u8; 2] = [0u8; 2];
 
                     let mut #rfunction = |offset: usize, data: &mut [u8]| {

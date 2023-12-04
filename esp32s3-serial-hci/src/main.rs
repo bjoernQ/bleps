@@ -9,7 +9,7 @@ use esp32s3_hal::{
     peripherals::Peripherals,
     prelude::*,
     timer::TimerGroup,
-    Rng, Rtc, Uart,
+    Rng, Uart,
 };
 use esp_backtrace as _;
 use esp_println::logger::init_logger;
@@ -22,30 +22,13 @@ fn main() -> ! {
     init_logger(log::LevelFilter::Off);
 
     let peripherals = Peripherals::take();
-    let mut system = peripherals.SYSTEM.split();
+    let system = peripherals.SYSTEM.split();
     let clocks = ClockControl::configure(system.clock_control, CpuClock::Clock240MHz).freeze();
 
-    // Disable the RTC and TIMG watchdog timers
-    let mut rtc = Rtc::new(peripherals.RTC_CNTL);
-    let timer_group0 = TimerGroup::new(
-        peripherals.TIMG0,
-        &clocks,
-        &mut system.peripheral_clock_control,
-    );
-    let mut wdt0 = timer_group0.wdt;
-    let timer_group1 = TimerGroup::new(
-        peripherals.TIMG1,
-        &clocks,
-        &mut system.peripheral_clock_control,
-    );
-    let mut wdt1 = timer_group1.wdt;
+    let timer_group1 = TimerGroup::new(peripherals.TIMG1, &clocks);
 
-    rtc.rwdt.disable();
-    wdt0.disable();
-    wdt1.disable();
-
-    let bt = peripherals.RADIO.split().1;
-    esp_wifi::initialize(
+    let init = esp_wifi::initialize(
+        esp_wifi::EspWifiInitFor::Ble,
         timer_group1.timer0,
         Rng::new(peripherals.RNG),
         system.radio_clock_control,
@@ -53,17 +36,17 @@ fn main() -> ! {
     )
     .unwrap();
 
-    let mut connector = BleConnector::new(bt);
+    let mut connector = BleConnector::new(&init, peripherals.BT);
 
-    let mut serial = Uart::new(peripherals.UART0, &mut system.peripheral_clock_control);
+    let mut serial = Uart::new(peripherals.UART0, &clocks);
 
-    serial.write(0xff).unwrap();
+    esp32s3_hal::prelude::_embedded_hal_serial_Write::write(&mut serial, 0xff).unwrap();
 
     let mut buffer = [0u8; 256];
     loop {
         let mut cnt = CNT;
         loop {
-            let b = serial.read();
+            let b = esp32s3_hal::prelude::_embedded_hal_serial_Read::read(&mut serial);
             match b {
                 Ok(b) => {
                     connector.write(&[b]).unwrap();
