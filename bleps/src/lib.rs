@@ -566,6 +566,47 @@ pub mod asynch {
                 .check_command_completed()
         }
 
+        pub async fn cmd_long_term_key_request_reply(
+            &mut self,
+            handle: u16,
+            ltk: u128,
+        ) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+            self.write_bytes(
+                Command::LeLongTermKeyRequestReply { handle, ltk }
+                    .encode()
+                    .as_slice(),
+            ).await;
+            log::info!("done writing command");
+            let res = self
+                .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF).await?
+                .check_command_completed();
+            log::info!("got completion event");
+    
+            res
+        }
+    
+        pub async fn cmd_read_br_addr(&mut self) -> Result<[u8; 6], Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(Command::ReadBrAddr.encode().as_slice()).await;
+            let res = self
+                .wait_for_command_complete(INFORMATIONAL_OGF, READ_BD_ADDR_OCF).await?
+                .check_command_completed()?;
+            match res {
+                EventType::CommandComplete {
+                    num_packets: _,
+                    opcode: _,
+                    data,
+                } => Ok(data.as_slice()[1..][..6].try_into().unwrap()),
+                _ => Err(Error::Failed(0)),
+            }
+        }        
+
         pub(crate) async fn wait_for_command_complete(
             &mut self,
             ogf: u8,

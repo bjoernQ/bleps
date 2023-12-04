@@ -169,7 +169,7 @@ bleps_dedup::dedup! {
                             .cmd_long_term_key_request_reply(
                                 handle,
                                 self.security_manager.ltk.unwrap(),
-                            )
+                            ).await
                             .unwrap();
                         Ok(WorkResult::DidWork)
                     }
@@ -262,7 +262,7 @@ bleps_dedup::dedup! {
                                 self.handle_read_blob(src_handle, handle, offset).await;
                             }
                         }
-                    
+
 
                         Ok(WorkResult::DidWork)
                     }
@@ -547,11 +547,16 @@ bleps_dedup::dedup! {
 
 impl<'a> AttributeServer<'a> {
     pub fn new(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a> {
-        AttributeServer::new_with_ltk(ble,attributes, [0u8;6], None)
+        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None)
     }
 
     /// Create a new instance, optionally provide an LTK
-    pub fn new_with_ltk(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>], local_addr: [u8;6], ltk: Option<u128>) -> AttributeServer<'a> {
+    pub fn new_with_ltk(
+        ble: &'a mut Ble<'a>,
+        attributes: &'a mut [Attribute<'a>],
+        local_addr: [u8; 6],
+        ltk: Option<u128>,
+    ) -> AttributeServer<'a> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
         }
@@ -584,7 +589,6 @@ impl<'a> AttributeServer<'a> {
     pub fn get_ltk(&self) -> Option<u128> {
         self.security_manager.ltk
     }
-
 }
 
 #[derive(Debug)]
