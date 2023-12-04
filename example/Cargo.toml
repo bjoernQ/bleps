@@ -8,6 +8,7 @@ serialport = "4.2.0"
 critical-section = "1.1.1"
 embedded-io-adapters = { version = "0.6.1", features = ["std"] }
 embedded-io-blocking = { package = "embedded-io", version = "0.6.1" }
-bleps = { path = "../bleps", features = ["macros", "async"] }
+#bleps = { path = "../bleps", features = ["macros", "async"] }
+bleps = { path = "../bleps", features = ["macros"] }
 env_logger = "0.10.0"
 crossterm = "0.25.0"

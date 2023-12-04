@@ -9,6 +9,7 @@ use crate::{
     att::Uuid,
     attribute::Attribute,
     attribute_server::{AttributeServerError, NotificationData, WorkResult},
+    sm::SecurityManager,
 };
 
 pub struct AttributeServer<'a, T>
@@ -19,6 +20,8 @@ where
     pub(crate) src_handle: u16,
     pub(crate) mtu: u16,
     pub(crate) attributes: &'a mut [Attribute<'a>],
+
+    pub(crate) security_manager: SecurityManager,
 }
 
 impl<'a, T> AttributeServer<'a, T>
@@ -26,6 +29,16 @@ where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
     pub fn new(ble: &'a mut Ble<T>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a, T> {
+        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None)
+    }
+
+    /// Create a new instance, optionally provide an LTK
+    pub fn new_with_ltk(
+        ble: &'a mut Ble<T>,
+        attributes: &'a mut [Attribute<'a>],
+        local_addr: [u8; 6],
+        ltk: Option<u128>,
+    ) -> AttributeServer<'a, T> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
         }
@@ -41,12 +54,23 @@ where
 
         log::trace!("{:#x?}", &attributes);
 
+        let mut security_manager = SecurityManager::default();
+        security_manager.local_address = Some(local_addr);
+        security_manager.ltk = ltk;
+
         AttributeServer {
             ble,
             src_handle: 0,
             mtu: crate::attribute_server::BASE_MTU,
             attributes,
+
+            security_manager,
         }
+    }
+
+    /// Get the current LTK
+    pub fn get_ltk(&self) -> Option<u128> {
+        self.security_manager.ltk
     }
 
     /// Run the GATT server until disconnect

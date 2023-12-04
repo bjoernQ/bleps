@@ -657,10 +657,10 @@ mod tests {
             0x98, 0xcf, 0xad, 0x7c, 0x4c, 0x57, 0xbf, 0xe1,
         ];
 
-        let mut pkb_x = [0u8;32];
+        let mut pkb_x = [0u8; 32];
         pkb_x.copy_from_slice(&pkb[..32]);
         pkb_x.reverse();
-        let mut pka_x = [0u8;32];
+        let mut pka_x = [0u8; 32];
         pka_x.copy_from_slice(&pka[..32]);
         pka_x.reverse();
 
