@@ -29,12 +29,13 @@ defmt = {version = "0.3", optional = true }
 bleps-macros = { path = "../bleps-macros", optional = true }
 
 # crypto deps - probably optional?
-p256 = { version = "0.13.2", features = ["ecdh","arithmetic"] }
+p256 = { version = "0.13.2", default-features = false, features = ["ecdh","arithmetic"] }
 aes = "0.8.2"
 cmac = "0.7.2"
 
 [dev-dependencies]
 env_logger = "0.10.0"
+p256 = { default-features = true }
 
 [features]
 async = [ "dep:embedded-io-async", "dep:futures", "dep:critical-section", "bleps-dedup/generate-async" ]

@@ -1,3 +1,5 @@
+use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
+
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
     att::{
@@ -60,19 +62,19 @@ impl From<AttDecodeError> for AttributeServerError {
     }
 }
 
-pub struct AttributeServer<'a> {
+pub struct AttributeServer<'a, R: CryptoRng + RngCore> {
     ble: &'a mut Ble<'a>,
     src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
 
-    security_manager: SecurityManager<Ble<'a>>,
+    security_manager: SecurityManager<'a, Ble<'a>, R>,
 }
 
 // Using the bleps-dedup proc-macro to de-duplicate the async/sync code
 // The macro will remove async/await for the SYNC implementation
 bleps_dedup::dedup! {
-    impl<'a> SYNC AttributeServer<'a>
-    impl<'a, T> ASYNC crate::async_attribute_server::AttributeServer<'a, T>
+    impl<'a, R: CryptoRng + RngCore> SYNC AttributeServer<'a, R>
+    impl<'a, T, R: CryptoRng + RngCore> ASYNC crate::async_attribute_server::AttributeServer<'a, T, R>
         where
             T: embedded_io_async::Read + embedded_io_async::Write,
     {
@@ -545,9 +547,13 @@ bleps_dedup::dedup! {
     }
 }
 
-impl<'a> AttributeServer<'a> {
-    pub fn new(ble: &'a mut Ble<'a>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a> {
-        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None)
+impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
+    pub fn new(
+        ble: &'a mut Ble<'a>,
+        attributes: &'a mut [Attribute<'a>],
+        rng: &'a mut R,
+    ) -> AttributeServer<'a, R> {
+        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None, rng)
     }
 
     /// Create a new instance, optionally provide an LTK
@@ -556,7 +562,8 @@ impl<'a> AttributeServer<'a> {
         attributes: &'a mut [Attribute<'a>],
         local_addr: [u8; 6],
         ltk: Option<u128>,
-    ) -> AttributeServer<'a> {
+        rng: &'a mut R,
+    ) -> AttributeServer<'a, R> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
         }
@@ -572,7 +579,7 @@ impl<'a> AttributeServer<'a> {
 
         log::trace!("{:#x?}", &attributes);
 
-        let mut security_manager = SecurityManager::default();
+        let mut security_manager = SecurityManager::new(rng);
         security_manager.local_address = Some(local_addr);
         security_manager.ltk = ltk;
 

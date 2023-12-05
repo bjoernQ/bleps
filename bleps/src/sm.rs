@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 
 use bitfield::bitfield;
+use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
 
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
@@ -45,7 +46,7 @@ const SM_PAIRING_RANDOM: u8 = 0x04;
 const SM_PAIRING_PUBLIC_KEY: u8 = 0x0c;
 const SM_PAIRING_DHKEY_CHECK: u8 = 0x0d;
 
-pub struct SecurityManager<B> {
+pub struct SecurityManager<'a, B, R: CryptoRng> {
     skb: Option<SecretKey>,
     pkb: Option<PublicKey>,
 
@@ -63,6 +64,7 @@ pub struct SecurityManager<B> {
     pub peer_address: Option<[u8; 6]>,
     pub ltk: Option<u128>,
 
+    rng: &'a mut R,
     phantom: PhantomData<B>,
 }
 
@@ -76,8 +78,8 @@ impl<'a> BleWriter for Ble<'a> {
     }
 }
 
-impl<B> Default for SecurityManager<B> {
-    fn default() -> Self {
+impl<'a, B, R: CryptoRng> SecurityManager<'a, B, R> {
+    pub fn new(rng: &'a mut R) -> Self {
         Self {
             skb: None,
             pkb: None,
@@ -89,13 +91,14 @@ impl<B> Default for SecurityManager<B> {
             local_address: None,
             peer_address: None,
             ltk: None,
+            rng,
             phantom: PhantomData::default(),
         }
     }
 }
 
 #[cfg(feature = "async")]
-pub struct AsyncSecurityManager<B> {
+pub struct AsyncSecurityManager<'a, B, R: CryptoRng> {
     skb: Option<SecretKey>,
     pkb: Option<PublicKey>,
 
@@ -113,6 +116,7 @@ pub struct AsyncSecurityManager<B> {
     pub peer_address: Option<[u8; 6]>,
     pub ltk: Option<u128>,
 
+    rng: &'a mut R,
     phantom: PhantomData<B>,
 }
 
@@ -132,8 +136,8 @@ where
 }
 
 #[cfg(feature = "async")]
-impl<B> Default for AsyncSecurityManager<B> {
-    fn default() -> Self {
+impl<'a, B, R: CryptoRng> AsyncSecurityManager<'a, B, R> {
+    pub fn new(rng: &'a mut R) -> Self {
         Self {
             skb: None,
             pkb: None,
@@ -145,14 +149,15 @@ impl<B> Default for AsyncSecurityManager<B> {
             local_address: None,
             peer_address: None,
             ltk: None,
+            rng,
             phantom: PhantomData::default(),
         }
     }
 }
 
 bleps_dedup::dedup! {
-impl<B> SYNC SecurityManager<B> where B: BleWriter
-impl<B> ASYNC AsyncSecurityManager<B> where B: AsyncBleWriter
+impl<'a, B, R> SYNC SecurityManager<'a, B, R> where B: BleWriter, R: CryptoRng + RngCore
+impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: CryptoRng + RngCore
  {
     pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data) {
         log::info!("SM packet {:02x?}", payload.as_slice());
@@ -212,7 +217,7 @@ impl<B> ASYNC AsyncSecurityManager<B> where B: AsyncBleWriter
 
         let mut data = Data::new(&[SM_PAIRING_PUBLIC_KEY]);
 
-        let skb = SecretKey::new();
+        let skb = SecretKey::new(self.rng);
         let pkb = skb.public_key();
 
         let mut x = [0u8; 32];
@@ -230,7 +235,7 @@ impl<B> ASYNC AsyncSecurityManager<B> where B: AsyncBleWriter
 
         // SUBTLE: The order of these send/recv ops is important. See last
         // paragraph of Section 2.3.5.6.2.
-        let nb = Nonce::new();
+        let nb = Nonce::new(self.rng);
         let cb = nb.f4(pkb.x(), pka.x(), 0);
 
         let mut data = Data::new(&[SM_PAIRING_CONFIRM]);
