@@ -27,7 +27,9 @@ pub mod ad_structure;
 pub mod attribute;
 pub mod attribute_server;
 
+#[cfg(feature = "crypto")]
 pub mod crypto;
+#[cfg(feature = "crypto")]
 pub mod sm;
 
 #[cfg(feature = "async")]
@@ -701,6 +703,31 @@ pub mod asynch {
             let mut data = Self::new(&data);
             data.len = len;
             data
+        }
+    }
+}
+
+#[cfg(not(feature = "crypto"))]
+pub mod no_rng {
+    pub struct NoRng;
+
+    impl rand_core::CryptoRng for NoRng {}
+
+    impl rand_core::RngCore for NoRng {
+        fn next_u32(&mut self) -> u32 {
+            unimplemented!()
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            unimplemented!()
+        }
+
+        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+            unimplemented!()
+        }
+
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand_core::Error> {
+            unimplemented!()
         }
     }
 }

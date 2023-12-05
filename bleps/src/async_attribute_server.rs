@@ -1,16 +1,21 @@
+#[cfg(not(feature = "crypto"))]
+use core::marker::PhantomData;
+
 use core::cell::RefCell;
 
 use critical_section::Mutex;
 use futures::future::Either;
 use futures::pin_mut;
-use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
+use rand_core::{CryptoRng, RngCore};
+
+#[cfg(feature = "crypto")]
+use crate::sm::AsyncSecurityManager;
 
 use crate::{
     asynch::Ble,
     att::Uuid,
     attribute::Attribute,
     attribute_server::{AttributeServerError, NotificationData, WorkResult},
-    sm::AsyncSecurityManager,
 };
 
 pub struct AttributeServer<'a, T, R: CryptoRng + RngCore>
@@ -21,7 +26,11 @@ where
     pub(crate) src_handle: u16,
     pub(crate) attributes: &'a mut [Attribute<'a>],
 
+    #[cfg(feature = "crypto")]
     pub(crate) security_manager: AsyncSecurityManager<'a, Ble<T>, R>,
+
+    #[cfg(not(feature = "crypto"))]
+    phantom: PhantomData<R>,
 }
 
 impl<'a, T, R: CryptoRng + RngCore> AttributeServer<'a, T, R>
@@ -40,9 +49,9 @@ where
     pub fn new_with_ltk(
         ble: &'a mut Ble<T>,
         attributes: &'a mut [Attribute<'a>],
-        local_addr: [u8; 6],
-        ltk: Option<u128>,
-        rng: &'a mut R,
+        _local_addr: [u8; 6],
+        _ltk: Option<u128>,
+        _rng: &'a mut R,
     ) -> AttributeServer<'a, T, R> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
@@ -59,22 +68,34 @@ where
 
         log::trace!("{:#x?}", &attributes);
 
-        let mut security_manager = AsyncSecurityManager::new(rng);
-        security_manager.local_address = Some(local_addr);
-        security_manager.ltk = ltk;
+        #[cfg(feature = "crypto")]
+        let mut security_manager = AsyncSecurityManager::new(_rng);
+        #[cfg(feature = "crypto")]
+        {
+            security_manager.local_address = Some(_local_addr);
+            security_manager.ltk = _ltk;
+        }
 
         AttributeServer {
             ble,
             src_handle: 0,
             attributes,
 
+            #[cfg(feature = "crypto")]
             security_manager,
+
+            #[cfg(not(feature = "crypto"))]
+            phantom: PhantomData::default(),
         }
     }
 
     /// Get the current LTK
     pub fn get_ltk(&self) -> Option<u128> {
-        self.security_manager.ltk
+        #[cfg(feature = "crypto")]
+        return self.security_manager.ltk;
+
+        #[cfg(not(feature = "crypto"))]
+        None
     }
 
     /// Run the GATT server until disconnect
