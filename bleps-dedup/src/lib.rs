@@ -109,8 +109,16 @@ fn de_async(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             }
             proc_macro2::TokenTree::Punct(p) => {
                 if p.as_char() == '.' {
+                    if let Some(prev) = prev.clone() {
+                        output.extend([prev]);
+                    }
                     prev = Some(tok);
                 } else {
+                    if let Some(prev) = prev.clone() {
+                        output.extend([prev]);
+                    }
+                    prev = None;
+
                     output.extend([tok]);
                 }
             }
@@ -133,6 +141,10 @@ fn de_async(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 output.extend([tok]);
             }
         }
+    }
+
+    if let Some(prev) = prev.clone() {
+        output.extend([prev]);
     }
 
     output
