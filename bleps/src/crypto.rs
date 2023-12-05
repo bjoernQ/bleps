@@ -553,12 +553,12 @@ mod tests {
     #[test]
     fn testtest() {
         let skb = SecretKey::new(&mut OsRng::default());
-        let pkb = skb.public_key();
+        let _pkb = skb.public_key();
 
         let ska = SecretKey::new(&mut OsRng::default());
         let pka = ska.public_key();
 
-        let dh_key = skb.dh_key(pka).unwrap();
+        let _dh_key = skb.dh_key(pka).unwrap();
     }
 
     #[test]

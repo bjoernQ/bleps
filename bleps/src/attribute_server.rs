@@ -1,5 +1,10 @@
-use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
+#[cfg(not(feature = "crypto"))]
+use core::marker::PhantomData;
 
+use rand_core::{CryptoRng, RngCore};
+
+#[cfg(feature = "crypto")]
+use crate::sm::SecurityManager;
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
     att::{
@@ -12,7 +17,6 @@ use crate::{
     command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
     l2cap::{L2capDecodeError, L2capPacket},
-    sm::SecurityManager,
     Ble, Data, Error,
 };
 
@@ -66,7 +70,11 @@ pub struct AttributeServer<'a, R: CryptoRng + RngCore> {
     src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
 
+    #[cfg(feature = "crypto")]
     security_manager: SecurityManager<'a, Ble<'a>, R>,
+
+    #[cfg(not(feature = "crypto"))]
+    phantom: PhantomData<R>,
 }
 
 // Using the bleps-dedup proc-macro to de-duplicate the async/sync code
@@ -151,28 +159,30 @@ bleps_dedup::dedup! {
                             Ok(WorkResult::GotDisconnected)
                     }
                     crate::PollResult::Event(EventType::ConnectionComplete {
-                        status,
+                        status: _status,
                         handle: _,
                         role: _,
                         peer_address_type: _,
-                        peer_address,
+                        peer_address: _peer_address,
                         interval: _,
                         latency: _,
                         timeout: _,
                     }) => {
-                        if status == 0 {
-                            self.security_manager.peer_address = Some(peer_address);
+                        #[cfg(feature = "crypto")]
+                        if _status == 0 {
+                            self.security_manager.peer_address = Some(_peer_address);
                         }
                         Ok(WorkResult::DidWork)
                     }
                     crate::PollResult::Event(EventType::LongTermKeyRequest {
-                        handle,
+                        handle: _handle,
                         random: _,
                         diversifier: _,
                     }) => {
+                        #[cfg(feature = "crypto")]
                         self.ble
                             .cmd_long_term_key_request_reply(
-                                handle,
+                                _handle,
                                 self.security_manager.ltk.unwrap(),
                             ).await
                             .unwrap();
@@ -183,6 +193,7 @@ bleps_dedup::dedup! {
                         let (src_handle, l2cap_packet) = L2capPacket::decode(packet)?;
                         if l2cap_packet.channel == 6 {
                             // handle SM
+                            #[cfg(feature = "crypto")]
                             self.security_manager
                                 .handle(self.ble, src_handle, l2cap_packet.payload).await;
                             Ok(WorkResult::DidWork)
@@ -564,9 +575,9 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
     pub fn new_with_ltk(
         ble: &'a mut Ble<'a>,
         attributes: &'a mut [Attribute<'a>],
-        local_addr: [u8; 6],
-        ltk: Option<u128>,
-        rng: &'a mut R,
+        _local_addr: [u8; 6],
+        _ltk: Option<u128>,
+        _rng: &'a mut R,
     ) -> AttributeServer<'a, R> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
@@ -583,9 +594,13 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
 
         log::trace!("{:#x?}", &attributes);
 
-        let mut security_manager = SecurityManager::new(rng);
-        security_manager.local_address = Some(local_addr);
-        security_manager.ltk = ltk;
+        #[cfg(feature = "crypto")]
+        let mut security_manager = SecurityManager::new(_rng);
+        #[cfg(feature = "crypto")]
+        {
+            security_manager.local_address = Some(_local_addr);
+            security_manager.ltk = _ltk;
+        }
 
         AttributeServer {
             ble,
@@ -593,13 +608,21 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
             src_handle: 0,
             attributes,
 
+            #[cfg(feature = "crypto")]
             security_manager,
+
+            #[cfg(not(feature = "crypto"))]
+            phantom: PhantomData::default(),
         }
     }
 
     /// Get the current LTK
     pub fn get_ltk(&self) -> Option<u128> {
-        self.security_manager.ltk
+        #[cfg(feature = "crypto")]
+        return self.security_manager.ltk;
+
+        #[cfg(not(feature = "crypto"))]
+        None
     }
 }
 

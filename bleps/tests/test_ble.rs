@@ -687,6 +687,7 @@ fn attribute_server_discover_two_services() {
         custom_char_att_data_attr2,
         val,
     ];
+
     let mut rng = OsRng::default();
     let mut srv = AttributeServer::new(&mut ble, attributes, &mut rng);
 

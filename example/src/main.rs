@@ -15,6 +15,7 @@ use bleps::{
 };
 use embedded_io_adapters::std::FromStd;
 use embedded_io_blocking::{Error, ErrorType, Read, Write};
+use rand_core::OsRng;
 
 fn main() {
     env_logger::init();
@@ -150,7 +151,14 @@ fn main() {
             ],
         },]);
 
-        let mut srv = AttributeServer::new_with_ltk(&mut ble, &mut gatt_attributes, local_addr, ltk);
+        let mut rng = OsRng::default();
+        let mut srv = AttributeServer::new_with_ltk(
+            &mut ble,
+            &mut gatt_attributes,
+            local_addr,
+            ltk,
+            &mut rng,
+        );
 
         let mut response = [b'H', b'e', b'l', b'l', b'o', b'0'];
 
