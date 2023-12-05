@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(assert_matches)]
 #![cfg_attr(feature = "async", feature(async_fn_in_trait))]
+#![cfg_attr(feature = "async", allow(async_fn_in_trait))]
 #![cfg_attr(feature = "async", allow(incomplete_features))]
 
 use core::cell::RefCell;

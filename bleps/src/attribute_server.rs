@@ -64,7 +64,7 @@ pub struct AttributeServer<'a> {
     src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
 
-    security_manager: SecurityManager,
+    security_manager: SecurityManager<Ble<'a>>,
 }
 
 // Using the bleps-dedup proc-macro to de-duplicate the async/sync code
@@ -182,7 +182,7 @@ bleps_dedup::dedup! {
                         if l2cap_packet.channel == 6 {
                             // handle SM
                             self.security_manager
-                                .handle(self.ble, src_handle, l2cap_packet.payload);
+                                .handle(self.ble, src_handle, l2cap_packet.payload).await;
                             Ok(WorkResult::DidWork)
                         } else {
                         let packet = Att::decode(l2cap_packet)?;

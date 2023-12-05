@@ -9,7 +9,7 @@ use crate::{
     att::Uuid,
     attribute::Attribute,
     attribute_server::{AttributeServerError, NotificationData, WorkResult},
-    sm::SecurityManager,
+    sm::AsyncSecurityManager,
 };
 
 pub struct AttributeServer<'a, T>
@@ -21,7 +21,7 @@ where
     pub(crate) mtu: u16,
     pub(crate) attributes: &'a mut [Attribute<'a>],
 
-    pub(crate) security_manager: SecurityManager,
+    pub(crate) security_manager: AsyncSecurityManager<Ble<T>>,
 }
 
 impl<'a, T> AttributeServer<'a, T>
@@ -54,7 +54,7 @@ where
 
         log::trace!("{:#x?}", &attributes);
 
-        let mut security_manager = SecurityManager::default();
+        let mut security_manager = AsyncSecurityManager::default();
         security_manager.local_address = Some(local_addr);
         security_manager.ltk = ltk;
 
