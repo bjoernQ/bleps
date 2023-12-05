@@ -3,6 +3,7 @@ use core::cell::RefCell;
 use critical_section::Mutex;
 use futures::future::Either;
 use futures::pin_mut;
+use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
 
 use crate::{
     asynch::Ble,
@@ -12,7 +13,7 @@ use crate::{
     sm::AsyncSecurityManager,
 };
 
-pub struct AttributeServer<'a, T>
+pub struct AttributeServer<'a, T, R: CryptoRng + RngCore>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
@@ -21,15 +22,19 @@ where
     pub(crate) mtu: u16,
     pub(crate) attributes: &'a mut [Attribute<'a>],
 
-    pub(crate) security_manager: AsyncSecurityManager<Ble<T>>,
+    pub(crate) security_manager: AsyncSecurityManager<'a, Ble<T>, R>,
 }
 
-impl<'a, T> AttributeServer<'a, T>
+impl<'a, T, R: CryptoRng + RngCore> AttributeServer<'a, T, R>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
-    pub fn new(ble: &'a mut Ble<T>, attributes: &'a mut [Attribute<'a>]) -> AttributeServer<'a, T> {
-        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None)
+    pub fn new(
+        ble: &'a mut Ble<T>,
+        attributes: &'a mut [Attribute<'a>],
+        rng: &'a mut R,
+    ) -> AttributeServer<'a, T, R> {
+        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None, rng)
     }
 
     /// Create a new instance, optionally provide an LTK
@@ -38,7 +43,8 @@ where
         attributes: &'a mut [Attribute<'a>],
         local_addr: [u8; 6],
         ltk: Option<u128>,
-    ) -> AttributeServer<'a, T> {
+        rng: &'a mut R,
+    ) -> AttributeServer<'a, T, R> {
         for (i, attr) in attributes.iter_mut().enumerate() {
             attr.handle = i as u16 + 1;
         }
@@ -54,7 +60,7 @@ where
 
         log::trace!("{:#x?}", &attributes);
 
-        let mut security_manager = AsyncSecurityManager::default();
+        let mut security_manager = AsyncSecurityManager::new(rng);
         security_manager.local_address = Some(local_addr);
         security_manager.ltk = ltk;
 
@@ -74,10 +80,10 @@ where
     }
 
     /// Run the GATT server until disconnect
-    pub async fn run<F, R>(&mut self, notifier: &'a mut F) -> Result<(), AttributeServerError>
+    pub async fn run<F, N>(&mut self, notifier: &'a mut F) -> Result<(), AttributeServerError>
     where
-        F: FnMut() -> R,
-        R: core::future::Future<Output = NotificationData>,
+        F: FnMut() -> N,
+        N: core::future::Future<Output = NotificationData>,
     {
         let notification_to_send = Mutex::new(RefCell::new(None));
         loop {

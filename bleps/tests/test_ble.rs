@@ -18,6 +18,7 @@ use bleps::{
     l2cap::L2capPacket,
     Ble, Data, HciConnection, PollResult,
 };
+use p256::elliptic_curve::rand_core::OsRng;
 
 struct TestConnector {
     to_read: RefCell<[u8; 128]>,
@@ -686,7 +687,8 @@ fn attribute_server_discover_two_services() {
         custom_char_att_data_attr2,
         val,
     ];
-    let mut srv = AttributeServer::new(&mut ble, attributes);
+    let mut rng = OsRng::default();
+    let mut srv = AttributeServer::new(&mut ble, attributes, &mut rng);
 
     // ReadByGroupTypeReq { start: 1, end: ffff, group_type: Uuid16(2800) }
     connector.provide_data_to_read(&[
