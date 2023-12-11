@@ -5,9 +5,9 @@ use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
 
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
-    crypto::{Addr, Check, Confirm, DHKey, IoCap, Nonce, PublicKey, SecretKey},
+    crypto::{Check, Confirm, DHKey, IoCap, MacKey, Nonce, PublicKey, SecretKey},
     l2cap::L2capPacket,
-    Ble, Data,
+    Addr, Ble, Data,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +47,8 @@ const SM_PAIRING_PUBLIC_KEY: u8 = 0x0c;
 const SM_PAIRING_DHKEY_CHECK: u8 = 0x0d;
 
 pub struct SecurityManager<'a, B, R: CryptoRng> {
+    ioa: Option<IoCap>,
+
     skb: Option<SecretKey>,
     pkb: Option<PublicKey>,
 
@@ -54,14 +56,17 @@ pub struct SecurityManager<'a, B, R: CryptoRng> {
 
     confirm: Option<Confirm>,
 
-    nb: Option<[u8; 16]>,
+    na: Option<Nonce>,
+    nb: Option<Nonce>,
 
     dh_key: Option<DHKey>,
 
+    mac_key: Option<MacKey>,
+
     eb: Option<Check>,
 
-    pub local_address: Option<[u8; 6]>,
-    pub peer_address: Option<[u8; 6]>,
+    pub local_address: Option<Addr>,
+    pub peer_address: Option<Addr>,
     pub ltk: Option<u128>,
 
     rng: &'a mut R,
@@ -81,12 +86,15 @@ impl<'a> BleWriter for Ble<'a> {
 impl<'a, B, R: CryptoRng> SecurityManager<'a, B, R> {
     pub fn new(rng: &'a mut R) -> Self {
         Self {
+            ioa: None,
             skb: None,
             pkb: None,
             pka: None,
             confirm: None,
+            na: None,
             nb: None,
             dh_key: None,
+            mac_key: None,
             eb: None,
             local_address: None,
             peer_address: None,
@@ -99,6 +107,8 @@ impl<'a, B, R: CryptoRng> SecurityManager<'a, B, R> {
 
 #[cfg(feature = "async")]
 pub struct AsyncSecurityManager<'a, B, R: CryptoRng> {
+    ioa: Option<IoCap>,
+
     skb: Option<SecretKey>,
     pkb: Option<PublicKey>,
 
@@ -106,14 +116,16 @@ pub struct AsyncSecurityManager<'a, B, R: CryptoRng> {
 
     confirm: Option<Confirm>,
 
-    nb: Option<[u8; 16]>,
+    na: Option<Nonce>,
+    nb: Option<Nonce>,
 
     dh_key: Option<DHKey>,
 
+    mac_key: Option<MacKey>,
     eb: Option<Check>,
 
-    pub local_address: Option<[u8; 6]>,
-    pub peer_address: Option<[u8; 6]>,
+    pub local_address: Option<Addr>,
+    pub peer_address: Option<Addr>,
     pub ltk: Option<u128>,
 
     rng: &'a mut R,
@@ -139,12 +151,15 @@ where
 impl<'a, B, R: CryptoRng> AsyncSecurityManager<'a, B, R> {
     pub fn new(rng: &'a mut R) -> Self {
         Self {
+            ioa: None,
             skb: None,
             pkb: None,
             pka: None,
             confirm: None,
+            na: None,
             nb: None,
             dh_key: None,
+            mac_key: None,
             eb: None,
             local_address: None,
             peer_address: None,
@@ -153,6 +168,16 @@ impl<'a, B, R: CryptoRng> AsyncSecurityManager<'a, B, R> {
             phantom: PhantomData::default(),
         }
     }
+}
+
+fn make_auth_req() -> AuthReq {
+    let mut auth_req = AuthReq(0);
+    auth_req.set_bonding_flags(1);
+    auth_req.set_mitm(1);
+    auth_req.set_sc(1);
+    auth_req.set_keypress(0);
+    auth_req.set_ct2(1);
+    auth_req
 }
 
 bleps_dedup::dedup! {
@@ -185,20 +210,14 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         }
     }
 
-    async fn handle_pairing_request(&mut self, ble: &mut B, src_handle: u16, _data: &[u8]) {
+    async fn handle_pairing_request(&mut self, ble: &mut B, src_handle: u16, data: &[u8]) {
+        self.ioa = Some(IoCap::new(data[2], data[1] != 0, data[0]));
         log::info!("got pairing request");
-
-        let mut auth_req = AuthReq(0);
-        auth_req.set_bonding_flags(1);
-        auth_req.set_mitm(1);
-        auth_req.set_sc(1);
-        auth_req.set_keypress(0);
-        auth_req.set_ct2(1);
 
         let mut data = Data::new(&[SM_PAIRING_RESPONSE]);
         data.append_value(IoCapability::DisplayYesNo as u8);
         data.append_value(OobDataFlag::NotPresent as u8);
-        data.append_value(auth_req.0);
+        data.append_value(make_auth_req().0);
         data.append_value(0x10u8);
         data.append_value(0u8); // 3
         data.append_value(0u8); // 3
@@ -247,7 +266,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         self.pkb = Some(pkb);
         self.skb = Some(skb);
         self.confirm = Some(cb);
-        self.nb = Some(nb.0.to_le_bytes().try_into().unwrap());
+        self.nb = Some(nb);
         self.dh_key = Some(dh_key);
     }
 
@@ -255,13 +274,12 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         log::info!("got pairing random {:02x?}", random);
 
         let mut data = Data::new(&[SM_PAIRING_RANDOM]);
-        let mut tmp_random = [0u8; 16];
-        tmp_random.copy_from_slice(self.nb.as_ref().unwrap());
-        data.append(&tmp_random);
+        data.append(&self.nb.unwrap().0.to_le_bytes());
         self.write_sm(ble, src_handle, data).await;
 
         let na = Nonce(u128::from_le_bytes(random.try_into().unwrap()));
-        let nb = Nonce(u128::from_le_bytes(self.nb.unwrap()));
+        self.na = Some(na);
+        let nb = self.nb.unwrap();
         let vb = na.g2(
             self.pka.as_ref().unwrap().x(),
             self.pkb.as_ref().unwrap().x(),
@@ -272,42 +290,46 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         // assume it's correct or the user will cancel on central
         log::info!("Display code is {}", vb.0);
 
-        let local_addr = self.local_address.unwrap();
-        let peer_addr = self.peer_address.unwrap();
-
         // Authentication stage 2 and long term key calculation
         // ([Vol 3] Part H, Section 2.3.5.6.5 and C.2.2.4).
 
-        let a = Addr::from_le_bytes(false, peer_addr);
-        let b = Addr::from_le_bytes(false, local_addr);
+        let a = self.peer_address.unwrap();
+        let b = self.local_address.unwrap();
         let ra = 0;
         log::info!("a = {:02x?}", a.0);
         log::info!("b = {:02x?}", b.0);
 
-        let mut auth_req = AuthReq(0);
-        auth_req.set_bonding_flags(1);
-        auth_req.set_mitm(1);
-        auth_req.set_sc(1);
-        auth_req.set_keypress(0);
-        auth_req.set_ct2(1);
         let io_cap = IoCapability::DisplayYesNo as u8;
-        let iob = IoCap::new(auth_req.0, false, io_cap);
+        let iob = IoCap::new(make_auth_req().0, false, io_cap);
         let dh_key = self.dh_key.as_ref().unwrap();
 
         let (mac_key, ltk) = dh_key.f5(na, nb, a, b);
         let eb = mac_key.f6(nb, na, ra, iob, b, a);
 
+        self.mac_key = Some(mac_key);
         self.ltk = Some(ltk.0);
         self.eb = Some(eb);
     }
 
     async fn handle_pairing_dhkey_check(&mut self, ble: &mut B, src_handle: u16, ea: &[u8]) {
         log::info!("got dhkey_check {:02x?}", ea);
-
-        // TODO ... check the DHKEY
-        // if ea != mac_key.f6(na, nb, rb, ioa, a, b) {
-        //    fail(Reason::DhKeyCheckFailed)
-        // }
+        let expected = self
+            .mac_key
+            .as_ref()
+            .unwrap()
+            .f6(
+                self.na.unwrap(),
+                self.nb.unwrap(),
+                0,
+                self.ioa.unwrap(),
+                self.peer_address.unwrap(),
+                self.local_address.unwrap(),
+            )
+            .0
+            .to_le_bytes();
+        if ea != expected {
+            log::warn!("DH check failed");
+        }
 
         let mut data = Data::new(&[SM_PAIRING_DHKEY_CHECK]);
         data.append(&self.eb.as_ref().unwrap().0.to_le_bytes());

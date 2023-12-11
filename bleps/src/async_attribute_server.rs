@@ -16,6 +16,7 @@ use crate::{
     att::Uuid,
     attribute::Attribute,
     attribute_server::{AttributeServerError, NotificationData, WorkResult},
+    Addr,
 };
 
 pub struct AttributeServer<'a, T, R: CryptoRng + RngCore>
@@ -42,14 +43,20 @@ where
         attributes: &'a mut [Attribute<'a>],
         rng: &'a mut R,
     ) -> AttributeServer<'a, T, R> {
-        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None, rng)
+        AttributeServer::new_with_ltk(
+            ble,
+            attributes,
+            Addr::from_le_bytes(false, [0u8; 6]),
+            None,
+            rng,
+        )
     }
 
     /// Create a new instance, optionally provide an LTK
     pub fn new_with_ltk(
         ble: &'a mut Ble<T>,
         attributes: &'a mut [Attribute<'a>],
-        _local_addr: [u8; 6],
+        _local_addr: Addr,
         _ltk: Option<u128>,
         _rng: &'a mut R,
     ) -> AttributeServer<'a, T, R> {

@@ -1,5 +1,7 @@
 // This file contains code from Blackrock User-Mode Bluetooth LE Library (https://github.com/mxk/burble)
 
+use crate::Addr;
+
 use cmac::digest;
 use p256::{ecdh, elliptic_curve::rand_core};
 use rand_core::CryptoRng;
@@ -96,28 +98,10 @@ impl From<&Key> for u128 {
     }
 }
 
-/// 56-bit device address in big-endian byte order used by [`DHKey::f5`] and
-/// [`MacKey::f6`] functions ([Vol 3] Part H, Section 2.2.7 and 2.2.8).
-#[derive(Clone, Copy, Debug)]
-#[must_use]
-#[repr(transparent)]
-pub struct Addr(pub [u8; 7]);
-
-impl Addr {
-    /// Creates a device address from a little-endian byte array.
-    #[inline]
-    pub fn from_le_bytes(is_random: bool, mut v: [u8; 6]) -> Self {
-        v.reverse();
-        let mut a = [0; 7];
-        a[0] = u8::from(is_random);
-        a[1..].copy_from_slice(&v);
-        Self(a)
-    }
-}
-
 /// Concatenated `AuthReq`, OOB data flag, and IO capability parameters used by
 /// [`MacKey::f6`] function ([Vol 3] Part H, Section 2.2.8).
 #[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
 pub struct IoCap([u8; 3]);
 
 impl IoCap {

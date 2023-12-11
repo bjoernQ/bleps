@@ -1,4 +1,4 @@
-use crate::{Data, Error, HciConnection};
+use crate::{Addr, Data, Error, HciConnection};
 
 #[derive(Debug)]
 pub struct Event {
@@ -27,8 +27,7 @@ pub enum EventType {
         status: u8,
         handle: u16,
         role: u8,
-        peer_address_type: u8,
-        peer_address: [u8; 6],
+        peer_address: Addr,
         interval: u16,
         latency: u16,
         timeout: u16,
@@ -156,8 +155,8 @@ impl EventType {
                         let status = data[0];
                         let handle = ((data[2] as u16) << 8) + data[1] as u16;
                         let role = data[3];
-                        let peer_address_type = data[4];
-                        let peer_address = data[5..][..6].try_into().unwrap();
+                        let peer_address =
+                            Addr::from_le_bytes(data[4] != 0, data[5..][..6].try_into().unwrap());
                         let interval = ((data[2] as u16) << 8) + data[1] as u16;
                         let latency = ((data[2] as u16) << 8) + data[1] as u16;
                         let timeout = ((data[2] as u16) << 8) + data[1] as u16;
@@ -166,7 +165,6 @@ impl EventType {
                             status,
                             handle,
                             role,
-                            peer_address_type,
                             peer_address,
                             interval,
                             latency,
@@ -257,8 +255,8 @@ impl EventType {
                         let status = data[0];
                         let handle = ((data[2] as u16) << 8) + data[1] as u16;
                         let role = data[3];
-                        let peer_address_type = data[4];
-                        let peer_address = data[5..][..6].try_into().unwrap();
+                        let peer_address =
+                            Addr::from_le_bytes(data[4] != 0, data[5..][..6].try_into().unwrap());
                         let interval = ((data[2] as u16) << 8) + data[1] as u16;
                         let latency = ((data[2] as u16) << 8) + data[1] as u16;
                         let timeout = ((data[2] as u16) << 8) + data[1] as u16;
@@ -267,7 +265,6 @@ impl EventType {
                             status,
                             handle,
                             role,
-                            peer_address_type,
                             peer_address,
                             interval,
                             latency,

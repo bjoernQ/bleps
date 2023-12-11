@@ -11,7 +11,7 @@ use bleps::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
     attribute_server::{AttributeServer, NotificationData, WorkResult},
-    gatt, Ble, HciConnector,
+    gatt, Addr, Ble, HciConnector,
 };
 use embedded_io_adapters::std::FromStd;
 use embedded_io_blocking::{Error, ErrorType, Read, Write};
@@ -63,7 +63,7 @@ fn main() {
 
         println!("{:?}", ble.init());
 
-        let local_addr = ble.cmd_read_br_addr().unwrap();
+        let local_addr = Addr::from_le_bytes(false, ble.cmd_read_br_addr().unwrap());
 
         println!("{:?}", ble.cmd_set_le_advertising_parameters());
         println!(
