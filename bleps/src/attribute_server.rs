@@ -17,7 +17,7 @@ use crate::{
     command::{Command, LE_OGF, SET_ADVERTISING_DATA_OCF},
     event::EventType,
     l2cap::{L2capDecodeError, L2capPacket},
-    Ble, Data, Error,
+    Addr, Ble, Data, Error,
 };
 
 pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
@@ -162,7 +162,6 @@ bleps_dedup::dedup! {
                         status: _status,
                         handle: _,
                         role: _,
-                        peer_address_type: _,
                         peer_address: _peer_address,
                         interval: _,
                         latency: _,
@@ -568,14 +567,20 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
         attributes: &'a mut [Attribute<'a>],
         rng: &'a mut R,
     ) -> AttributeServer<'a, R> {
-        AttributeServer::new_with_ltk(ble, attributes, [0u8; 6], None, rng)
+        AttributeServer::new_with_ltk(
+            ble,
+            attributes,
+            Addr::from_le_bytes(false, [0u8; 6]),
+            None,
+            rng,
+        )
     }
 
     /// Create a new instance, optionally provide an LTK
     pub fn new_with_ltk(
         ble: &'a mut Ble<'a>,
         attributes: &'a mut [Attribute<'a>],
-        _local_addr: [u8; 6],
+        _local_addr: Addr,
         _ltk: Option<u128>,
         _rng: &'a mut R,
     ) -> AttributeServer<'a, R> {

@@ -63,6 +63,25 @@ impl defmt::Format for Error {
     }
 }
 
+/// 56-bit device address in big-endian byte order used by [`DHKey::f5`] and
+/// [`MacKey::f6`] functions ([Vol 3] Part H, Section 2.2.7 and 2.2.8).
+#[derive(Clone, Copy, Debug)]
+#[must_use]
+#[repr(transparent)]
+pub struct Addr(pub [u8; 7]);
+
+impl Addr {
+    /// Creates a device address from a little-endian byte array.
+    #[inline]
+    pub fn from_le_bytes(is_random: bool, mut v: [u8; 6]) -> Self {
+        v.reverse();
+        let mut a = [0; 7];
+        a[0] = u8::from(is_random);
+        a[1..].copy_from_slice(&v);
+        Self(a)
+    }
+}
+
 #[derive(Debug)]
 pub enum PollResult {
     Event(EventType),
