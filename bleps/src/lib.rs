@@ -393,7 +393,28 @@ impl<'a> Ble<'a> {
             Some(packet_type) => match packet_type {
                 PACKET_TYPE_COMMAND => {}
                 PACKET_TYPE_ASYNC_DATA => {
-                    let acl_packet = AclPacket::read(self.connector);
+                    let mut acl_packet = AclPacket::read(self.connector);
+                    let wanted =
+                        u16::from_le_bytes(acl_packet.data.as_slice()[..2].try_into().unwrap())
+                            as usize;
+
+                    // somewhat dirty way to handle re-assembling fragmented packets
+                    loop {
+                        log::debug!("Wanted = {}, actual = {}", wanted, acl_packet.data.len());
+
+                        if wanted == acl_packet.data.len() - 4 {
+                            break;
+                        }
+
+                        log::debug!("Need more!");
+                        if self.connector.read() != Some(PACKET_TYPE_ASYNC_DATA) {
+                            log::error!("Expected async data");
+                        }
+
+                        let next_acl_packet = AclPacket::read(self.connector);
+                        acl_packet.data.append(next_acl_packet.data.as_slice());
+                    }
+
                     return Some(PollResult::AsyncData(acl_packet));
                 }
                 PACKET_TYPE_EVENT => {
@@ -678,7 +699,36 @@ pub mod asynch {
                 Some(packet_type) => match packet_type {
                     PACKET_TYPE_COMMAND => {}
                     PACKET_TYPE_ASYNC_DATA => {
-                        let acl_packet = AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+                        let mut acl_packet =
+                            AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+
+                        let wanted =
+                            u16::from_le_bytes(acl_packet.data.as_slice()[..2].try_into().unwrap())
+                                as usize;
+
+                        // somewhat dirty way to handle re-assembling fragmented packets
+                        loop {
+                            log::debug!("Wanted = {}, actual = {}", wanted, acl_packet.data.len());
+
+                            if wanted == acl_packet.data.len() - 4 {
+                                break;
+                            }
+
+                            log::debug!("Need more!");
+                            let mut buffer = [0u8; 1];
+                            (&mut *self.hci.borrow_mut())
+                                .read(&mut buffer)
+                                .await
+                                .unwrap();
+                            if buffer[0] != PACKET_TYPE_ASYNC_DATA {
+                                log::error!("Expected async data");
+                            }
+
+                            let next_acl_packet =
+                                AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+                            acl_packet.data.append(next_acl_packet.data.as_slice());
+                        }
+
                         return Some(PollResult::AsyncData(acl_packet));
                     }
                     PACKET_TYPE_EVENT => {
