@@ -9,7 +9,7 @@ use core::cell::RefCell;
 use acl::AclPacket;
 use command::{
     opcode, Command, INFORMATIONAL_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF, READ_BD_ADDR_OCF,
-    SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
+    SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_EVENT_MASK_OCF, SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
 use embedded_io_blocking::{Read, Write};
@@ -250,6 +250,7 @@ impl<'a> Ble<'a> {
         Self: Sized,
     {
         self.cmd_reset()?;
+        self.cmd_set_event_mask([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])?;
         Ok(())
     }
 
@@ -259,6 +260,15 @@ impl<'a> Ble<'a> {
     {
         self.write_bytes(Command::Reset.encode().as_slice());
         self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)?
+            .check_command_completed()
+    }
+
+    pub fn cmd_set_event_mask(&mut self, events: [u8; 8]) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(Command::SetEventMask { events }.encode().as_slice());
+        self.wait_for_command_complete(CONTROLLER_OGF, SET_EVENT_MASK_OCF)?
             .check_command_completed()
     }
 
@@ -542,7 +552,10 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            Ok(self.cmd_reset().await?)
+            let res = self.cmd_reset().await?;
+            self.cmd_set_event_mask([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+                .await?;
+            Ok(res)
         }
 
         pub async fn cmd_reset(&mut self) -> Result<EventType, Error>
@@ -551,6 +564,17 @@ pub mod asynch {
         {
             self.write_bytes(Command::Reset.encode().as_slice()).await;
             self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
+                .await?
+                .check_command_completed()
+        }
+
+        pub async fn cmd_set_event_mask(&mut self, events: [u8; 8]) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(Command::SetEventMask { events }.encode().as_slice())
+                .await;
+            self.wait_for_command_complete(CONTROLLER_OGF, SET_EVENT_MASK_OCF)
                 .await?
                 .check_command_completed()
         }

@@ -2,6 +2,7 @@ use crate::{AdvertisingParameters, Data};
 
 pub const CONTROLLER_OGF: u8 = 0x03;
 pub const RESET_OCF: u16 = 0x03;
+pub const SET_EVENT_MASK_OCF: u16 = 0x01;
 
 pub const LE_OGF: u8 = 0x08;
 pub const SET_ADVERTISING_PARAMETERS_OCF: u16 = 0x06;
@@ -64,6 +65,7 @@ pub enum Command<'a> {
     Disconnect { connection_handle: u16, reason: u8 },
     LeLongTermKeyRequestReply { handle: u16, ltk: u128 },
     ReadBrAddr,
+    SetEventMask { events: [u8; 8] },
 }
 
 impl<'a> Command<'a> {
@@ -158,6 +160,15 @@ impl<'a> Command<'a> {
                 data[0] = 0x01;
                 CommandHeader::from_ogf_ocf(INFORMATIONAL_OGF, READ_BD_ADDR_OCF, 0x00)
                     .write_into(&mut data[1..]);
+                Data::new(&data)
+            }
+            Command::SetEventMask { events } => {
+                log::info!("command set event mask");
+                let mut data = [0u8; 12];
+                data[0] = 0x01;
+                CommandHeader::from_ogf_ocf(CONTROLLER_OGF, SET_EVENT_MASK_OCF, 0x08)
+                    .write_into(&mut data[1..]);
+                data[4..].copy_from_slice(&events);
                 Data::new(&data)
             }
         }
