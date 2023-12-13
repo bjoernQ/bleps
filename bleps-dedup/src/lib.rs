@@ -1,4 +1,4 @@
-use proc_macro::TokenStream;
+use proc_macro::{Delimiter, TokenStream};
 use proc_macro_error::proc_macro_error;
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ pub fn dedup(input: TokenStream) -> TokenStream {
                     current.extend([tok]);
                 }
             },
-            proc_macro::TokenTree::Group(_group) => {
+            proc_macro::TokenTree::Group(group) if group.delimiter() == Delimiter::Brace => {
                 if !current.is_empty() {
                     impls.push(Implementation {
                         is_async: impl_is_async,

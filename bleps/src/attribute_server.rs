@@ -74,6 +74,9 @@ pub struct AttributeServer<'a, R: CryptoRng + RngCore> {
     #[cfg(feature = "crypto")]
     security_manager: SecurityManager<'a, Ble<'a>, R>,
 
+    #[cfg(feature = "crypto")]
+    pub(crate) pin_callback: Option<&'a mut dyn FnMut(u32)>,
+
     #[cfg(not(feature = "crypto"))]
     phantom: PhantomData<R>,
 }
@@ -195,7 +198,7 @@ bleps_dedup::dedup! {
                             // handle SM
                             #[cfg(feature = "crypto")]
                             self.security_manager
-                                .handle(self.ble, src_handle, l2cap_packet.payload).await?;
+                                .handle(self.ble, src_handle, l2cap_packet.payload, &mut self.pin_callback).await?;
                             Ok(WorkResult::DidWork)
                         } else {
                         let packet = Att::decode(l2cap_packet)?;
@@ -563,6 +566,9 @@ bleps_dedup::dedup! {
 }
 
 impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
+    /// Create a new instance of the AttributeServer
+    ///
+    /// When _NOT_ using the `crypto` feature you can pass a mutual reference to `bleps::no_rng::NoRng`
     pub fn new(
         ble: &'a mut Ble<'a>,
         attributes: &'a mut [Attribute<'a>],
@@ -616,6 +622,8 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
 
             #[cfg(feature = "crypto")]
             security_manager,
+            #[cfg(feature = "crypto")]
+            pin_callback: None,
 
             #[cfg(not(feature = "crypto"))]
             phantom: PhantomData::default(),
@@ -629,6 +637,11 @@ impl<'a, R: CryptoRng + RngCore> AttributeServer<'a, R> {
 
         #[cfg(not(feature = "crypto"))]
         None
+    }
+
+    #[cfg(feature = "crypto")]
+    pub fn set_pin_callback(&mut self, pin_callback: Option<&'a mut dyn FnMut(u32)>) {
+        self.pin_callback = pin_callback;
     }
 }
 

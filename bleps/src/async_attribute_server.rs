@@ -31,6 +31,9 @@ where
     #[cfg(feature = "crypto")]
     pub(crate) security_manager: AsyncSecurityManager<'a, Ble<T>, R>,
 
+    #[cfg(feature = "crypto")]
+    pub(crate) pin_callback: Option<&'a mut dyn FnMut(u32)>,
+
     #[cfg(not(feature = "crypto"))]
     phantom: PhantomData<R>,
 }
@@ -39,6 +42,9 @@ impl<'a, T, R: CryptoRng + RngCore> AttributeServer<'a, T, R>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
+    /// Create a new instance of the AttributeServer
+    ///
+    /// When _NOT_ using the `crypto` feature you can pass a mutual reference to `bleps::no_rng::NoRng`
     pub fn new(
         ble: &'a mut Ble<T>,
         attributes: &'a mut [Attribute<'a>],
@@ -92,6 +98,9 @@ where
 
             #[cfg(feature = "crypto")]
             security_manager,
+
+            #[cfg(feature = "crypto")]
+            pin_callback: None,
 
             #[cfg(not(feature = "crypto"))]
             phantom: PhantomData::default(),

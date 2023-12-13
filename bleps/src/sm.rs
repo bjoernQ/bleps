@@ -206,7 +206,7 @@ bleps_dedup::dedup! {
 impl<'a, B, R> SYNC SecurityManager<'a, B, R> where B: BleWriter, R: CryptoRng + RngCore
 impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: CryptoRng + RngCore
  {
-    pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data) -> Result<(), AttributeServerError> {
+    pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data, pin_callback: &mut Option<&mut dyn FnMut(u32)>) -> Result<(), AttributeServerError> {
         log::info!("SM packet {:02x?}", payload.as_slice());
 
         let data = &payload.as_slice()[1..];
@@ -220,7 +220,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
                 self.handle_pairing_public_key(ble, src_handle, data).await?;
             }
             SM_PAIRING_RANDOM => {
-                self.handle_pairing_random(ble, src_handle, data).await?;
+                self.handle_pairing_random(ble, src_handle, data, pin_callback).await?;
             }
             SM_PAIRING_DHKEY_CHECK => {
                 self.handle_pairing_dhkey_check(ble, src_handle, data).await?;
@@ -301,7 +301,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         Ok(())
     }
 
-    async fn handle_pairing_random(&mut self, ble: &mut B, src_handle: u16, random: &[u8]) -> Result<(), AttributeServerError> {
+    async fn handle_pairing_random(&mut self, ble: &mut B, src_handle: u16, random: &[u8], pin_callback: &mut Option<&mut dyn FnMut(u32)>) -> Result<(), AttributeServerError> {
         log::info!("got pairing random {:02x?}", random);
 
         if *&(self.nb).is_none() {
@@ -345,6 +345,9 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         // should display the code and get confirmation from user (pin ok or not) - if not okay send a pairing-failed
         // assume it's correct or the user will cancel on central
         log::info!("Display code is {}", vb.0);
+        if let Some(pin_callback) = pin_callback {
+            pin_callback(vb.0);
+        }
 
         // Authentication stage 2 and long term key calculation
         // ([Vol 3] Part H, Section 2.3.5.6.5 and C.2.2.4).

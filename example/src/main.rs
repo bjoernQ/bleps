@@ -160,6 +160,12 @@ fn main() {
             &mut rng,
         );
 
+        let mut pin_callback = |pin: u32| {
+            println!("PIN is {pin}");
+        };
+
+        srv.set_pin_callback(Some(&mut pin_callback));
+
         let mut response = [b'H', b'e', b'l', b'l', b'o', b'0'];
 
         loop {
