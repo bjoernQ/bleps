@@ -47,6 +47,7 @@ pub enum WorkResult {
 pub enum AttributeServerError {
     L2capError(L2capDecodeError),
     AttError(AttDecodeError),
+    SecurityManagerError,
 }
 
 impl From<L2capDecodeError> for AttributeServerError {
@@ -194,7 +195,7 @@ bleps_dedup::dedup! {
                             // handle SM
                             #[cfg(feature = "crypto")]
                             self.security_manager
-                                .handle(self.ble, src_handle, l2cap_packet.payload).await;
+                                .handle(self.ble, src_handle, l2cap_packet.payload).await?;
                             Ok(WorkResult::DidWork)
                         } else {
                         let packet = Att::decode(l2cap_packet)?;

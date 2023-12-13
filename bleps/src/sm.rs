@@ -5,10 +5,31 @@ use p256::elliptic_curve::rand_core::{CryptoRng, RngCore};
 
 use crate::{
     acl::{AclPacket, BoundaryFlag, HostBroadcastFlag},
+    attribute_server::AttributeServerError,
     crypto::{Check, Confirm, DHKey, IoCap, MacKey, Nonce, PublicKey, SecretKey},
     l2cap::L2capPacket,
     Addr, Ble, Data,
 };
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum SecurityManagerError {
+    PasskeyEntryFailed = 1,
+    OobNotAvailable,
+    AuthenticationRequirements,
+    ConfirmValueFailed,
+    PairingNotSupported,
+    EncryptionKeySize,
+    CommandNotSupported,
+    UnspecifiedReason,
+    RepeatedAttempts,
+    InvalidParameters,
+    DHKeyCheckFailed,
+    NumericComparisonFailed,
+    BrEdrPairingInProgress,
+    GenerationNotAllowed,
+    KeyRejected,
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -43,6 +64,7 @@ const SM_PAIRING_REQUEST: u8 = 0x01;
 const SM_PAIRING_RESPONSE: u8 = 0x02;
 const SM_PAIRING_CONFIRM: u8 = 0x03;
 const SM_PAIRING_RANDOM: u8 = 0x04;
+const SM_PAIRING_FAILED: u8 = 0x05;
 const SM_PAIRING_PUBLIC_KEY: u8 = 0x0c;
 const SM_PAIRING_DHKEY_CHECK: u8 = 0x0d;
 
@@ -184,7 +206,7 @@ bleps_dedup::dedup! {
 impl<'a, B, R> SYNC SecurityManager<'a, B, R> where B: BleWriter, R: CryptoRng + RngCore
 impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: CryptoRng + RngCore
  {
-    pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data) {
+    pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data) -> Result<(), AttributeServerError> {
         log::info!("SM packet {:02x?}", payload.as_slice());
 
         let data = &payload.as_slice()[1..];
@@ -195,19 +217,23 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
                 self.handle_pairing_request(ble, src_handle, data).await;
             }
             SM_PAIRING_PUBLIC_KEY => {
-                self.handle_pairing_public_key(ble, src_handle, data).await;
+                self.handle_pairing_public_key(ble, src_handle, data).await?;
             }
             SM_PAIRING_RANDOM => {
-                self.handle_pairing_random(ble, src_handle, data).await;
+                self.handle_pairing_random(ble, src_handle, data).await?;
             }
             SM_PAIRING_DHKEY_CHECK => {
-                self.handle_pairing_dhkey_check(ble, src_handle, data).await;
+                self.handle_pairing_dhkey_check(ble, src_handle, data).await?;
             }
-            // handle FAILURE
             _ => {
+                // handle FAILURE
                 log::error!("Unknown SM command {}", command);
+                self.report_error(ble, src_handle, SecurityManagerError::CommandNotSupported).await;
+                return Err(AttributeServerError::SecurityManagerError);
             }
         }
+
+        Ok(())
     }
 
     async fn handle_pairing_request(&mut self, ble: &mut B, src_handle: u16, data: &[u8]) {
@@ -225,7 +251,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         self.write_sm(ble, src_handle, data).await;
     }
 
-    async fn handle_pairing_public_key(&mut self, ble: &mut B, src_handle: u16, pka: &[u8]) {
+    async fn handle_pairing_public_key(&mut self, ble: &mut B, src_handle: u16, pka: &[u8]) -> Result<(), AttributeServerError> {
         log::info!("got public key");
 
         log::info!("key len = {} {:02x?}", pka.len(), pka);
@@ -250,7 +276,10 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         data.append(&y);
         self.write_sm(ble, src_handle, data).await;
 
-        let dh_key = skb.dh_key(pka).unwrap();
+        let dh_key = match skb.dh_key(pka) {
+            Some(dh_key) => Ok(dh_key),
+            None => Err(AttributeServerError::SecurityManagerError),
+        }?;
 
         // SUBTLE: The order of these send/recv ops is important. See last
         // paragraph of Section 2.3.5.6.2.
@@ -268,10 +297,37 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         self.confirm = Some(cb);
         self.nb = Some(nb);
         self.dh_key = Some(dh_key);
+
+        Ok(())
     }
 
-    async fn handle_pairing_random(&mut self, ble: &mut B, src_handle: u16, random: &[u8]) {
+    async fn handle_pairing_random(&mut self, ble: &mut B, src_handle: u16, random: &[u8]) -> Result<(), AttributeServerError> {
         log::info!("got pairing random {:02x?}", random);
+
+        if *&(self.nb).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.pka).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.pkb).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.peer_address).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.local_address).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
 
         let mut data = Data::new(&[SM_PAIRING_RANDOM]);
         data.append(&self.nb.unwrap().0.to_le_bytes());
@@ -309,10 +365,38 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         self.mac_key = Some(mac_key);
         self.ltk = Some(ltk.0);
         self.eb = Some(eb);
+
+        Ok(())
     }
 
-    async fn handle_pairing_dhkey_check(&mut self, ble: &mut B, src_handle: u16, ea: &[u8]) {
+    async fn handle_pairing_dhkey_check(&mut self, ble: &mut B, src_handle: u16, ea: &[u8]) -> Result<(), AttributeServerError> {
         log::info!("got dhkey_check {:02x?}", ea);
+
+        if *&(self.na).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.nb).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.ioa).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.peer_address).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
+        if *&(self.local_address).is_none() {
+            self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
+            return Err(AttributeServerError::SecurityManagerError);
+        }
+
         let expected = self
             .mac_key
             .as_ref()
@@ -334,6 +418,8 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         let mut data = Data::new(&[SM_PAIRING_DHKEY_CHECK]);
         data.append(&self.eb.as_ref().unwrap().0.to_le_bytes());
         self.write_sm(ble, src_handle, data).await;
+
+        Ok(())
     }
 
     async fn write_sm(&self, ble: &mut B, handle: u16, data: Data) {
@@ -353,5 +439,10 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         ble.write_bytes(res.as_slice()).await;
     }
 
+    async fn report_error(&self, ble: &mut B, src_handle: u16, error: SecurityManagerError) {
+        let mut data = Data::new(&[SM_PAIRING_FAILED]);
+        data.append(&[error as u8]);
+        self.write_sm(ble, src_handle, data).await;
+    }
 }
 }
