@@ -17,6 +17,7 @@ where
 {
     pub(crate) ble: &'a mut Ble<T>,
     pub(crate) src_handle: u16,
+    pub(crate) mtu: u16,
     pub(crate) attributes: &'a mut [Attribute<'a>],
 }
 
@@ -43,6 +44,7 @@ where
         AttributeServer {
             ble,
             src_handle: 0,
+            mtu: crate::attribute_server::BASE_MTU,
             attributes,
         }
     }

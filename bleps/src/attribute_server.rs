@@ -17,13 +17,8 @@ pub const PRIMARY_SERVICE_UUID16: Uuid = Uuid::Uuid16(0x2800);
 pub const CHARACTERISTIC_UUID16: Uuid = Uuid::Uuid16(0x2803);
 pub const GENERIC_ATTRIBUTE_UUID16: Uuid = Uuid::Uuid16(0x1801);
 
-/// The base MTU that is always supported. The MTU can be upgraded
-/// per-connection. In the case of multiple connections, handling this
-/// correctly would involve keeping track of which connection was configured
-/// with which MTU. Instead of doing this, we always use the `BASE_MTU`
-/// when transmitting but in the MTU exchange we support reporting a larger MTU.
-/// This allows the client to use a larger MTU when transmitting to us, even
-/// though we always respond with the smaller MTU.
+/// The default value of MTU, which can be upgraded through negotiation
+/// with the client.
 pub const BASE_MTU: u16 = 23;
 
 #[cfg(feature = "mtu128")]
@@ -61,6 +56,10 @@ impl From<AttDecodeError> for AttributeServerError {
 
 pub struct AttributeServer<'a> {
     ble: &'a mut Ble<'a>,
+    // The MTU negotiated for this server. In principle this can be different per-client,
+    // but we only support one client at a time, so we only need to store one value
+    // (and reset it to the default when disconnecting).
+    mtu: u16,
     src_handle: u16,
     attributes: &'a mut [Attribute<'a>],
 }
@@ -122,7 +121,7 @@ bleps_dedup::dedup! {
         ) -> Result<WorkResult, AttributeServerError> {
             if let Some(notification_data) = notification_data {
                 let mut answer = notification_data.data;
-                answer.limit_len(BASE_MTU as usize - 3);
+                answer.limit_len(self.mtu as usize - 3);
                 let mut data = Data::new_att_value_ntf(notification_data.handle);
                 data.append(&answer.as_slice());
                 self.write_att(self.src_handle, data).await;
@@ -144,6 +143,8 @@ bleps_dedup::dedup! {
                             reason: _,
                         } = evt
                         {
+                            // Reset the MTU; the next connection will need to renegotiate it.
+                            self.mtu = BASE_MTU;
                             Ok(WorkResult::GotDisconnected)
                         } else {
                             Ok(WorkResult::DidWork)
@@ -330,7 +331,7 @@ bleps_dedup::dedup! {
 
             let response = match err {
                 Ok(_) => {
-                    data.limit_len(BASE_MTU as usize);
+                    data.limit_len(self.mtu as usize);
                     data
                 }
                 Err(e) => Data::new_att_error_response(ATT_READ_REQUEST_OPCODE, handle, e),
@@ -373,8 +374,9 @@ bleps_dedup::dedup! {
         }
 
         async fn handle_exchange_mtu(&mut self, src_handle: u16, mtu: u16) {
-            log::debug!("Requested MTU {mtu}, returning {MTU}");
-            self.write_att(src_handle, Data::new_att_exchange_mtu_response(MTU))
+            self.mtu = mtu.min(MTU);
+            log::debug!("Requested MTU {mtu}, returning {}", self.mtu);
+            self.write_att(src_handle, Data::new_att_exchange_mtu_response(self.mtu))
                 .await;
         }
 
@@ -484,7 +486,7 @@ bleps_dedup::dedup! {
 
             let response = match err {
                 Ok(_) => {
-                    data.limit_len(BASE_MTU as usize - 1);
+                    data.limit_len(self.mtu as usize);
                     data
                 }
                 Err(e) => Data::new_att_error_response(ATT_READ_BLOB_REQ_OPCODE, handle, e),
@@ -531,6 +533,7 @@ impl<'a> AttributeServer<'a> {
 
         AttributeServer {
             ble,
+            mtu: BASE_MTU,
             src_handle: 0,
             attributes,
         }
