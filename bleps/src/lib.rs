@@ -1,13 +1,16 @@
 #![no_std]
 #![feature(assert_matches)]
+#![allow(stable_features)]
 #![cfg_attr(feature = "async", feature(async_fn_in_trait))]
+#![cfg_attr(feature = "async", allow(async_fn_in_trait))]
 #![cfg_attr(feature = "async", allow(incomplete_features))]
 
 use core::cell::RefCell;
 
 use acl::AclPacket;
 use command::{
-    opcode, Command, SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_SCAN_RSP_DATA_OCF,
+    opcode, Command, INFORMATIONAL_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF, READ_BD_ADDR_OCF,
+    SET_ADVERTISE_ENABLE_OCF, SET_ADVERTISING_DATA_OCF, SET_EVENT_MASK_OCF, SET_SCAN_RSP_DATA_OCF,
 };
 use command::{LE_OGF, SET_ADVERTISING_PARAMETERS_OCF};
 use embedded_io_blocking::{Read, Write};
@@ -24,6 +27,11 @@ pub mod ad_structure;
 
 pub mod attribute;
 pub mod attribute_server;
+
+#[cfg(feature = "crypto")]
+pub mod crypto;
+#[cfg(feature = "crypto")]
+pub mod sm;
 
 #[cfg(feature = "async")]
 pub mod async_attribute_server;
@@ -53,6 +61,25 @@ impl defmt::Format for Error {
                 defmt::write!(fmt, "Failed({})", value)
             }
         }
+    }
+}
+
+/// 56-bit device address in big-endian byte order used by [`DHKey::f5`] and
+/// [`MacKey::f6`] functions ([Vol 3] Part H, Section 2.2.7 and 2.2.8).
+#[derive(Clone, Copy, Debug)]
+#[must_use]
+#[repr(transparent)]
+pub struct Addr(pub [u8; 7]);
+
+impl Addr {
+    /// Creates a device address from a little-endian byte array.
+    #[inline]
+    pub fn from_le_bytes(is_random: bool, mut v: [u8; 6]) -> Self {
+        v.reverse();
+        let mut a = [0; 7];
+        a[0] = u8::from(is_random);
+        a[1..].copy_from_slice(&v);
+        Self(a)
     }
 }
 
@@ -219,11 +246,13 @@ impl<'a> Ble<'a> {
         Ble { connector }
     }
 
-    pub fn init(&mut self) -> Result<EventType, Error>
+    pub fn init(&mut self) -> Result<(), Error>
     where
         Self: Sized,
     {
-        Ok(self.cmd_reset()?)
+        self.cmd_reset()?;
+        self.cmd_set_event_mask([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])?;
+        Ok(())
     }
 
     pub fn cmd_reset(&mut self) -> Result<EventType, Error>
@@ -232,6 +261,15 @@ impl<'a> Ble<'a> {
     {
         self.write_bytes(Command::Reset.encode().as_slice());
         self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)?
+            .check_command_completed()
+    }
+
+    pub fn cmd_set_event_mask(&mut self, events: [u8; 8]) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(Command::SetEventMask { events }.encode().as_slice());
+        self.wait_for_command_complete(CONTROLLER_OGF, SET_EVENT_MASK_OCF)?
             .check_command_completed()
     }
 
@@ -287,6 +325,47 @@ impl<'a> Ble<'a> {
             .check_command_completed()
     }
 
+    pub fn cmd_long_term_key_request_reply(
+        &mut self,
+        handle: u16,
+        ltk: u128,
+    ) -> Result<EventType, Error>
+    where
+        Self: Sized,
+    {
+        log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+        self.write_bytes(
+            Command::LeLongTermKeyRequestReply { handle, ltk }
+                .encode()
+                .as_slice(),
+        );
+        log::info!("done writing command");
+        let res = self
+            .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF)?
+            .check_command_completed();
+        log::info!("got completion event");
+
+        res
+    }
+
+    pub fn cmd_read_br_addr(&mut self) -> Result<[u8; 6], Error>
+    where
+        Self: Sized,
+    {
+        self.write_bytes(Command::ReadBrAddr.encode().as_slice());
+        let res = self
+            .wait_for_command_complete(INFORMATIONAL_OGF, READ_BD_ADDR_OCF)?
+            .check_command_completed()?;
+        match res {
+            EventType::CommandComplete {
+                num_packets: _,
+                opcode: _,
+                data,
+            } => Ok(data.as_slice()[1..][..6].try_into().unwrap()),
+            _ => Err(Error::Failed(0)),
+        }
+    }
+
     fn wait_for_command_complete(&mut self, ogf: u8, ocf: u16) -> Result<EventType, Error>
     where
         Self: Sized,
@@ -294,6 +373,9 @@ impl<'a> Ble<'a> {
         let timeout_at = self.connector.millis() + TIMEOUT_MILLIS;
         loop {
             let res = self.poll();
+            if res.is_some() {
+                log::info!("polled while waiting {:?}", res);
+            }
 
             match res {
                 Some(PollResult::Event(event)) => match event {
@@ -322,7 +404,28 @@ impl<'a> Ble<'a> {
             Some(packet_type) => match packet_type {
                 PACKET_TYPE_COMMAND => {}
                 PACKET_TYPE_ASYNC_DATA => {
-                    let acl_packet = AclPacket::read(self.connector);
+                    let mut acl_packet = AclPacket::read(self.connector);
+                    let wanted =
+                        u16::from_le_bytes(acl_packet.data.as_slice()[..2].try_into().unwrap())
+                            as usize;
+
+                    // somewhat dirty way to handle re-assembling fragmented packets
+                    loop {
+                        log::debug!("Wanted = {}, actual = {}", wanted, acl_packet.data.len());
+
+                        if wanted == acl_packet.data.len() - 4 {
+                            break;
+                        }
+
+                        log::debug!("Need more!");
+                        if self.connector.read() != Some(PACKET_TYPE_ASYNC_DATA) {
+                            log::error!("Expected async data");
+                        }
+
+                        let next_acl_packet = AclPacket::read(self.connector);
+                        acl_packet.data.append(next_acl_packet.data.as_slice());
+                    }
+
                     return Some(PollResult::AsyncData(acl_packet));
                 }
                 PACKET_TYPE_EVENT => {
@@ -450,7 +553,10 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            Ok(self.cmd_reset().await?)
+            let res = self.cmd_reset().await?;
+            self.cmd_set_event_mask([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+                .await?;
+            Ok(res)
         }
 
         pub async fn cmd_reset(&mut self) -> Result<EventType, Error>
@@ -459,6 +565,17 @@ pub mod asynch {
         {
             self.write_bytes(Command::Reset.encode().as_slice()).await;
             self.wait_for_command_complete(CONTROLLER_OGF, RESET_OCF)
+                .await?
+                .check_command_completed()
+        }
+
+        pub async fn cmd_set_event_mask(&mut self, events: [u8; 8]) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(Command::SetEventMask { events }.encode().as_slice())
+                .await;
+            self.wait_for_command_complete(CONTROLLER_OGF, SET_EVENT_MASK_OCF)
                 .await?
                 .check_command_completed()
         }
@@ -517,6 +634,51 @@ pub mod asynch {
                 .check_command_completed()
         }
 
+        pub async fn cmd_long_term_key_request_reply(
+            &mut self,
+            handle: u16,
+            ltk: u128,
+        ) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+            self.write_bytes(
+                Command::LeLongTermKeyRequestReply { handle, ltk }
+                    .encode()
+                    .as_slice(),
+            )
+            .await;
+            log::info!("done writing command");
+            let res = self
+                .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF)
+                .await?
+                .check_command_completed();
+            log::info!("got completion event");
+
+            res
+        }
+
+        pub async fn cmd_read_br_addr(&mut self) -> Result<[u8; 6], Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(Command::ReadBrAddr.encode().as_slice())
+                .await;
+            let res = self
+                .wait_for_command_complete(INFORMATIONAL_OGF, READ_BD_ADDR_OCF)
+                .await?
+                .check_command_completed()?;
+            match res {
+                EventType::CommandComplete {
+                    num_packets: _,
+                    opcode: _,
+                    data,
+                } => Ok(data.as_slice()[1..][..6].try_into().unwrap()),
+                _ => Err(Error::Failed(0)),
+            }
+        }
+
         pub(crate) async fn wait_for_command_complete(
             &mut self,
             ogf: u8,
@@ -562,7 +724,36 @@ pub mod asynch {
                 Some(packet_type) => match packet_type {
                     PACKET_TYPE_COMMAND => {}
                     PACKET_TYPE_ASYNC_DATA => {
-                        let acl_packet = AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+                        let mut acl_packet =
+                            AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+
+                        let wanted =
+                            u16::from_le_bytes(acl_packet.data.as_slice()[..2].try_into().unwrap())
+                                as usize;
+
+                        // somewhat dirty way to handle re-assembling fragmented packets
+                        loop {
+                            log::debug!("Wanted = {}, actual = {}", wanted, acl_packet.data.len());
+
+                            if wanted == acl_packet.data.len() - 4 {
+                                break;
+                            }
+
+                            log::debug!("Need more!");
+                            let mut buffer = [0u8; 1];
+                            (&mut *self.hci.borrow_mut())
+                                .read(&mut buffer)
+                                .await
+                                .unwrap();
+                            if buffer[0] != PACKET_TYPE_ASYNC_DATA {
+                                log::error!("Expected async data");
+                            }
+
+                            let next_acl_packet =
+                                AclPacket::async_read(&mut *self.hci.borrow_mut()).await;
+                            acl_packet.data.append(next_acl_packet.data.as_slice());
+                        }
+
                         return Some(PollResult::AsyncData(acl_packet));
                     }
                     PACKET_TYPE_EVENT => {
@@ -606,6 +797,31 @@ pub mod asynch {
             let mut data = Self::new(&data);
             data.len = len;
             data
+        }
+    }
+}
+
+#[cfg(not(feature = "crypto"))]
+pub mod no_rng {
+    pub struct NoRng;
+
+    impl rand_core::CryptoRng for NoRng {}
+
+    impl rand_core::RngCore for NoRng {
+        fn next_u32(&mut self) -> u32 {
+            unimplemented!()
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            unimplemented!()
+        }
+
+        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+            unimplemented!()
+        }
+
+        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand_core::Error> {
+            unimplemented!()
         }
     }
 }

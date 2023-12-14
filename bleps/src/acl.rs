@@ -38,8 +38,15 @@ impl AclPacket {
     pub fn read(connector: &dyn HciConnection) -> Self {
         let raw_handle_buffer = [connector.read().unwrap(), connector.read().unwrap()];
         let (pb, bc, handle) = Self::decode_raw_handle(raw_handle_buffer);
+        log::debug!(
+            "raw handle {:08b} {:08b} - boundary {:?}",
+            raw_handle_buffer[0],
+            raw_handle_buffer[1],
+            pb
+        );
 
         let len = u16::from_le_bytes([connector.read().unwrap(), connector.read().unwrap()]);
+        log::info!("read len {}", len);
         let data = Data::read(connector, len as usize);
 
         Self {

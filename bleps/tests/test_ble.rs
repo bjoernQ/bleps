@@ -18,6 +18,7 @@ use bleps::{
     l2cap::L2capPacket,
     Ble, Data, HciConnection, PollResult,
 };
+use p256::elliptic_curve::rand_core::OsRng;
 
 struct TestConnector {
     to_read: RefCell<[u8; 128]>,
@@ -158,17 +159,32 @@ fn init_works() {
     let connector = connector();
     let mut ble = Ble::new(&connector);
 
-    connector.provide_data_to_read(&[0x04, 0x0e, 0x04, 0x05, 0x03, 0x0c, 0x00]);
+    connector.provide_data_to_read(&[
+        0x04, 0x0e, 0x04, 0x05, 0x03, 0x0c, 0x00, 0x04, 0x0e, 0x04, 0x05, 0x01, 0x0c, 0x00,
+    ]);
 
     let res = ble.init();
 
-    assert_matches!(res, Ok(EventType::CommandComplete{ num_packets: 5, opcode: 0x0c03, data}) if data.as_slice() == &[0]);
+    assert_matches!(res, Ok(()));
 
-    assert_eq!(connector.get_write_idx(), 4);
+    assert_eq!(connector.get_write_idx(), 16);
     assert_eq!(connector.get_to_write_at(0), 0x01);
     assert_eq!(connector.get_to_write_at(1), 0x03);
     assert_eq!(connector.get_to_write_at(2), 0x0c);
     assert_eq!(connector.get_to_write_at(3), 0x00);
+
+    assert_eq!(connector.get_to_write_at(4), 0x01);
+    assert_eq!(connector.get_to_write_at(5), 0x01);
+    assert_eq!(connector.get_to_write_at(6), 0x0c);
+    assert_eq!(connector.get_to_write_at(7), 0x08);
+    assert_eq!(connector.get_to_write_at(8), 0xff);
+    assert_eq!(connector.get_to_write_at(9), 0xff);
+    assert_eq!(connector.get_to_write_at(10), 0xff);
+    assert_eq!(connector.get_to_write_at(11), 0xff);
+    assert_eq!(connector.get_to_write_at(12), 0xff);
+    assert_eq!(connector.get_to_write_at(13), 0xff);
+    assert_eq!(connector.get_to_write_at(14), 0xff);
+    assert_eq!(connector.get_to_write_at(15), 0xff);
 }
 
 #[test]
@@ -686,7 +702,9 @@ fn attribute_server_discover_two_services() {
         custom_char_att_data_attr2,
         val,
     ];
-    let mut srv = AttributeServer::new(&mut ble, attributes);
+
+    let mut rng = OsRng::default();
+    let mut srv = AttributeServer::new(&mut ble, attributes, &mut rng);
 
     // ReadByGroupTypeReq { start: 1, end: ffff, group_type: Uuid16(2800) }
     connector.provide_data_to_read(&[

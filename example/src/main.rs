@@ -11,10 +11,11 @@ use bleps::{
         create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
     },
     attribute_server::{AttributeServer, NotificationData, WorkResult},
-    gatt, Ble, HciConnector,
+    gatt, Addr, Ble, HciConnector,
 };
 use embedded_io_adapters::std::FromStd;
 use embedded_io_blocking::{Error, ErrorType, Read, Write};
+use rand_core::OsRng;
 
 fn main() {
     env_logger::init();
@@ -27,7 +28,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let port = serialport::new(&args[1], 115_200)
-        .timeout(Duration::from_millis(100))
+        .timeout(Duration::from_millis(300))
         .open()
         .expect("Failed to open port");
 
@@ -53,12 +54,17 @@ fn main() {
 
     crossterm::terminal::enable_raw_mode().unwrap();
 
+    let mut ltk = None;
+
     loop {
         let connector = BleConnector::new(&mut serial);
         let hci = HciConnector::new(connector, current_millis);
         let mut ble = Ble::new(&hci);
 
         println!("{:?}", ble.init());
+
+        let local_addr = Addr::from_le_bytes(false, ble.cmd_read_br_addr().unwrap());
+
         println!("{:?}", ble.cmd_set_le_advertising_parameters());
         println!(
             "{:?}",
@@ -145,7 +151,20 @@ fn main() {
             ],
         },]);
 
-        let mut srv = AttributeServer::new(&mut ble, &mut gatt_attributes);
+        let mut rng = OsRng::default();
+        let mut srv = AttributeServer::new_with_ltk(
+            &mut ble,
+            &mut gatt_attributes,
+            local_addr,
+            ltk,
+            &mut rng,
+        );
+
+        let mut pin_callback = |pin: u32| {
+            println!("PIN is {pin}");
+        };
+
+        srv.set_pin_callback(Some(&mut pin_callback));
 
         let mut response = [b'H', b'e', b'l', b'l', b'o', b'0'];
 
@@ -203,6 +222,8 @@ fn main() {
                 }
             }
         }
+
+        ltk = srv.get_ltk();
     }
 }
 

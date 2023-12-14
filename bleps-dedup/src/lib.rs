@@ -1,4 +1,4 @@
-use proc_macro::TokenStream;
+use proc_macro::{Delimiter, TokenStream};
 use proc_macro_error::proc_macro_error;
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ pub fn dedup(input: TokenStream) -> TokenStream {
                     current.extend([tok]);
                 }
             },
-            proc_macro::TokenTree::Group(_group) => {
+            proc_macro::TokenTree::Group(group) if group.delimiter() == Delimiter::Brace => {
                 if !current.is_empty() {
                     impls.push(Implementation {
                         is_async: impl_is_async,
@@ -109,8 +109,16 @@ fn de_async(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             }
             proc_macro2::TokenTree::Punct(p) => {
                 if p.as_char() == '.' {
+                    if let Some(prev) = prev.clone() {
+                        output.extend([prev]);
+                    }
                     prev = Some(tok);
                 } else {
+                    if let Some(prev) = prev.clone() {
+                        output.extend([prev]);
+                    }
+                    prev = None;
+
                     output.extend([tok]);
                 }
             }
@@ -133,6 +141,10 @@ fn de_async(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 output.extend([tok]);
             }
         }
+    }
+
+    if let Some(prev) = prev.clone() {
+        output.extend([prev]);
     }
 
     output
