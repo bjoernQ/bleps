@@ -94,7 +94,10 @@ impl Data {
                 self.append_value(*company_identifier);
                 self.append(payload);
             }
-            AdStructure::Unknown { ty, data } => todo!("Unimplemented {:?} {:?}", ty, data),
+            AdStructure::Unknown { ty, data } => {
+                self.append(&[(data.len() + 1) as u8, *ty]);
+                self.append(data);
+            }
         }
     }
 }

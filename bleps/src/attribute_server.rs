@@ -183,12 +183,17 @@ bleps_dedup::dedup! {
                         diversifier: _,
                     }) => {
                         #[cfg(feature = "crypto")]
-                        self.ble
-                            .cmd_long_term_key_request_reply(
-                                _handle,
-                                self.security_manager.ltk.unwrap(),
-                            ).await
-                            .unwrap();
+                        {
+                            if let Some(ltk) =  self.security_manager.ltk {
+                                self.ble
+                                .cmd_long_term_key_request_reply(
+                                    _handle,
+                                    ltk,
+                                ).await.unwrap();
+                            } else {
+                                // TODO handle this via long term key request negative reply
+                            }
+                        }
                         Ok(WorkResult::DidWork)
                     }
                     crate::PollResult::Event(_) => Ok(WorkResult::DidWork),
