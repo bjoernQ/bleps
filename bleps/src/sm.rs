@@ -426,6 +426,15 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
     }
 
     async fn write_sm(&self, ble: &mut B, handle: u16, data: Data) {
+        // Workaround! For unknown reasons this is currently necessary
+        // Needs to get solved in the underlying esp-wifi implementation
+        static mut DUMMY: u32 = 0;
+        unsafe {
+            for _ in 0..1_000_000 {
+                (&mut DUMMY as *mut u32).write_volatile(0);
+            }
+        }
+
         log::debug!("data {:x?}", data.as_slice());
 
         let res = L2capPacket::encode_sm(data);
