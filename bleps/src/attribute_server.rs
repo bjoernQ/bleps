@@ -232,7 +232,7 @@ bleps_dedup::dedup! {
                             }
 
                             Att::WriteCmd { handle, data } => {
-                                self.src_handle = handle;
+                                self.src_handle = src_handle;
                                 self.handle_write_cmd(src_handle, handle, data).await;
                             }
 
