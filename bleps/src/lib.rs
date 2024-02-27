@@ -333,17 +333,17 @@ impl<'a> Ble<'a> {
     where
         Self: Sized,
     {
-        log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+        log::trace!("before, key = {:x}, hanlde = {:x}", ltk, handle);
         self.write_bytes(
             Command::LeLongTermKeyRequestReply { handle, ltk }
                 .encode()
                 .as_slice(),
         );
-        log::info!("done writing command");
+        log::trace!("done writing command");
         let res = self
             .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF)?
             .check_command_completed();
-        log::info!("got completion event");
+        log::trace!("got completion event");
 
         res
     }
@@ -374,7 +374,7 @@ impl<'a> Ble<'a> {
         loop {
             let res = self.poll();
             if res.is_some() {
-                log::info!("polled while waiting {:?}", res);
+                log::debug!("polled while waiting {:?}", res);
             }
 
             match res {
@@ -642,19 +642,19 @@ pub mod asynch {
         where
             Self: Sized,
         {
-            log::info!("before, key = {:x}, hanlde = {:x}", ltk, handle);
+            log::trace!("before, key = {:x}, handle = {:x}", ltk, handle);
             self.write_bytes(
                 Command::LeLongTermKeyRequestReply { handle, ltk }
                     .encode()
                     .as_slice(),
             )
             .await;
-            log::info!("done writing command");
+            log::trace!("done writing command");
             let res = self
                 .wait_for_command_complete(LE_OGF, LONG_TERM_KEY_REQUEST_REPLY_OCF)
                 .await?
                 .check_command_completed();
-            log::info!("got completion event");
+            log::trace!("got completion event");
 
             res
         }

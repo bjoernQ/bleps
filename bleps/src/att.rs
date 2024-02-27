@@ -1,5 +1,3 @@
-use core::convert::TryInto;
-
 use crate::{l2cap::L2capPacket, Data};
 
 pub const ATT_READ_BY_GROUP_TYPE_REQUEST_OPCODE: u8 = 0x10;

@@ -3,7 +3,7 @@
 use crate::Addr;
 
 use cmac::digest;
-use p256::{ecdh, elliptic_curve::rand_core};
+use p256::ecdh;
 use rand_core::CryptoRng;
 use rand_core::RngCore;
 

@@ -46,7 +46,7 @@ impl AclPacket {
         );
 
         let len = u16::from_le_bytes([connector.read().unwrap(), connector.read().unwrap()]);
-        log::info!("read len {}", len);
+        log::debug!("read len {}", len);
         let data = Data::read(connector, len as usize);
 
         Self {

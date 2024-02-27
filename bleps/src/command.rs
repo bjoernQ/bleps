@@ -72,7 +72,7 @@ impl<'a> Command<'a> {
     pub fn encode(self) -> Data {
         match self {
             Command::Reset => {
-                log::info!("encode reset command");
+                log::debug!("encode reset command");
                 let mut data = [0u8; 4];
                 data[0] = 0x01;
                 CommandHeader::from_ogf_ocf(CONTROLLER_OGF, RESET_OCF, 0x00)
@@ -155,7 +155,7 @@ impl<'a> Command<'a> {
                 Data::new(&data)
             }
             Command::ReadBrAddr => {
-                log::info!("command read br addr");
+                log::debug!("command read br addr");
                 let mut data = [0u8; 4];
                 data[0] = 0x01;
                 CommandHeader::from_ogf_ocf(INFORMATIONAL_OGF, READ_BD_ADDR_OCF, 0x00)
@@ -163,7 +163,7 @@ impl<'a> Command<'a> {
                 Data::new(&data)
             }
             Command::SetEventMask { events } => {
-                log::info!("command set event mask");
+                log::debug!("command set event mask");
                 let mut data = [0u8; 12];
                 data[0] = 0x01;
                 CommandHeader::from_ogf_ocf(CONTROLLER_OGF, SET_EVENT_MASK_OCF, 0x08)

@@ -207,7 +207,7 @@ impl<'a, B, R> SYNC SecurityManager<'a, B, R> where B: BleWriter, R: CryptoRng +
 impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: CryptoRng + RngCore
  {
     pub(crate) async fn handle(&mut self, ble: &mut B, src_handle: u16, payload: crate::Data, pin_callback: &mut Option<&mut dyn FnMut(u32)>) -> Result<(), AttributeServerError> {
-        log::info!("SM packet {:02x?}", payload.as_slice());
+        log::debug!("SM packet {:02x?}", payload.as_slice());
 
         let data = &payload.as_slice()[1..];
         let command = payload.as_slice()[0];
@@ -238,7 +238,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
 
     async fn handle_pairing_request(&mut self, ble: &mut B, src_handle: u16, data: &[u8]) {
         self.ioa = Some(IoCap::new(data[2], data[1] != 0, data[0]));
-        log::info!("got pairing request");
+        log::debug!("got pairing request");
 
         let mut data = Data::new(&[SM_PAIRING_RESPONSE]);
         data.append_value(IoCapability::DisplayYesNo as u8);
@@ -252,9 +252,9 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
     }
 
     async fn handle_pairing_public_key(&mut self, ble: &mut B, src_handle: u16, pka: &[u8]) -> Result<(), AttributeServerError> {
-        log::info!("got public key");
+        log::debug!("got public key");
 
-        log::info!("key len = {} {:02x?}", pka.len(), pka);
+        log::debug!("key len = {} {:02x?}", pka.len(), pka);
         let pka = PublicKey::from_bytes(pka);
 
         // Send the local public key before validating the remote key to allow
@@ -302,7 +302,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
     }
 
     async fn handle_pairing_random(&mut self, ble: &mut B, src_handle: u16, random: &[u8], pin_callback: &mut Option<&mut dyn FnMut(u32)>) -> Result<(), AttributeServerError> {
-        log::info!("got pairing random {:02x?}", random);
+        log::debug!("got pairing random {:02x?}", random);
 
         if *&(self.nb).is_none() {
             self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
@@ -355,8 +355,8 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
         let a = self.peer_address.unwrap();
         let b = self.local_address.unwrap();
         let ra = 0;
-        log::info!("a = {:02x?}", a.0);
-        log::info!("b = {:02x?}", b.0);
+        log::trace!("a = {:02x?}", a.0);
+        log::trace!("b = {:02x?}", b.0);
 
         let io_cap = IoCapability::DisplayYesNo as u8;
         let iob = IoCap::new(make_auth_req().0, false, io_cap);
@@ -373,7 +373,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
     }
 
     async fn handle_pairing_dhkey_check(&mut self, ble: &mut B, src_handle: u16, ea: &[u8]) -> Result<(), AttributeServerError> {
-        log::info!("got dhkey_check {:02x?}", ea);
+        log::debug!("got dhkey_check {:02x?}", ea);
 
         if *&(self.na).is_none() {
             self.report_error(ble, src_handle, SecurityManagerError::UnspecifiedReason).await;
@@ -426,19 +426,10 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
     }
 
     async fn write_sm(&self, ble: &mut B, handle: u16, data: Data) {
-        // Workaround! For unknown reasons this is currently necessary
-        // Needs to get solved in the underlying esp-wifi implementation
-        static mut DUMMY: u32 = 0;
-        unsafe {
-            for _ in 0..1_000_000 {
-                (&mut DUMMY as *mut u32).write_volatile(0);
-            }
-        }
-
         log::debug!("data {:x?}", data.as_slice());
 
         let res = L2capPacket::encode_sm(data);
-        log::info!("encoded_l2cap {:x?}", res.as_slice());
+        log::trace!("encoded_l2cap {:x?}", res.as_slice());
 
         let res = AclPacket::encode(
             handle,
@@ -447,7 +438,7 @@ impl<'a, B, R> ASYNC AsyncSecurityManager<'a, B, R> where B: AsyncBleWriter, R: 
             res,
         );
 
-        log::info!("writing {:02x?}", res.as_slice());
+        log::debug!("writing {:02x?}", res.as_slice());
         ble.write_bytes(res.as_slice()).await;
     }
 
