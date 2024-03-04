@@ -94,3 +94,39 @@ fn test4() {
     println!("{}", my_characteristic_handle);
     println!("{}", my_characteristic_notify_enable_handle);
 }
+
+#[test]
+fn test5() {
+    let char_value = b"Hello!";
+
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(&b"Hola!"[..]);
+        5
+    };
+    let mut my_write_function = |_offset, data: &[u8]| {
+        println!("{:?}", data);
+    };
+
+    let desc_value = b"Hallo!";
+
+    gatt!([service {
+        uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+        characteristics: [characteristic {
+            uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+            value: char_value,
+            descriptors: [
+                descriptor {
+                    uuid: "9e7312e0-0001-11eb-9f10-fbc30a62cf38",
+                    read: my_read_function,
+                    write: my_write_function,
+                },
+                descriptor {
+                    uuid: "9e7312e0-0002-11eb-9f10-fbc30a62cf38",
+                    value: desc_value,
+                },
+            ],
+        },],
+    },]);
+
+    println!("{:x?}", gatt_attributes);
+}
