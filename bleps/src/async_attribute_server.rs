@@ -144,7 +144,7 @@ where
                         {
                             let mut cccd = [0u8; 1];
                             let cccd_len =
-                                self.get_characteristic_value((idx + 1) as u16, 0, &mut cccd[..]);
+                                self.get_characteristic_value((idx + 2) as u16, 0, &mut cccd[..]);
                             if let Some(1) = cccd_len {
                                 cccd[0] == 1
                             } else {

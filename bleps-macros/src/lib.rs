@@ -15,6 +15,12 @@ use syn::{parse_macro_input, Expr, Lit, Member, Path};
 ///                 write: my_write_function,
 ///                 name: "characteristic1",
 ///                 description: "Characteristic accessible via functions",
+///                 descriptors: [
+///                     descriptor {
+///                         uuid: "dfe57a9f-4495-45ba-9e02-df1a010b618c",
+///                         read: my_descriptor_read_function,
+///                     },
+///                 ],
 ///             },
 ///             characteristic {
 ///                 uuid: "96c05dff-2ff0-4080-ab41-f4d24bc6da85",
@@ -25,6 +31,8 @@ use syn::{parse_macro_input, Expr, Lit, Member, Path};
 ///         ],
 ///     },
 /// ]);
+///
+/// let notification_handle = characteristic1_handle;
 /// ```
 ///
 #[proc_macro]
@@ -156,6 +164,78 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         return quote!{ compile_error!("Unexpected"); }.into();
                                                     }
                                                 }
+                                                "descriptors" => {
+                                                    if let Expr::Array(descriptors) = field.expr {
+                                                        for descriptor in descriptors.elems {
+                                                            if let Expr::Struct(s) = descriptor {
+                                                                if path_to_string(s.path)
+                                                                    != "descriptor"
+                                                                {
+                                                                    return quote! { compile_error!("Unexpected"); }.into();
+                                                                }
+
+                                                                let mut desc =
+                                                                    Descriptor::default();
+
+                                                                for field in s.fields {
+                                                                    let name =
+                                                                        if let Member::Named(name) =
+                                                                            field.member
+                                                                        {
+                                                                            name.to_string()
+                                                                        } else {
+                                                                            return quote! { compile_error!("Unexpected"); }.into();
+                                                                        };
+
+                                                                    match name.as_str() {
+                                                                        "uuid" => {
+                                                                            if let Expr::Lit(value) = field.expr {
+                                                                                if let Lit::Str(s) = value.lit {
+                                                                                    desc.uuid = s.value();
+                                                                                } else {
+                                                                                    return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                }
+                                                                            } else {
+                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                            }
+                                                                        }
+                                                                        "read" => {
+                                                                            if let Expr::Path(p) = field.expr {
+                                                                                let name = path_to_string(p.path);
+                                                                                desc.read = Some(name);
+                                                                            } else {
+                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                            }
+                                                                        }
+                                                                        "write" => {
+                                                                            if let Expr::Path(p) = field.expr {
+                                                                                let name = path_to_string(p.path);
+                                                                                desc.write = Some(name);
+                                                                            } else {
+                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                            }
+                                                                        }
+                                                                        "value" => {
+                                                                            if let Expr::Path(p) = field.expr {
+                                                                                let name = path_to_string(p.path);
+                                                                                desc.value = Some(name);
+                                                                            } else {
+                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                            }
+                                                                        }
+                                                                        _ => {
+                                                                            return quote! { compile_error!("Unexpected"); }
+                                                                                .into()
+                                                                        }
+                                                                    }
+                                                                }
+                                                                charact.descriptors.push(desc);
+                                                            }
+                                                        }
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
                                                 _ => {
                                                     return quote! { compile_error!("Unexpected"); }
                                                         .into()
@@ -186,7 +266,9 @@ pub fn gatt(input: TokenStream) -> TokenStream {
     let mut attribs: Vec<_> = Vec::new();
     let mut post: Vec<_> = Vec::new();
     let mut pre: Vec<_> = Vec::new();
-    let mut current_handle: usize = 0;
+    // Keep handle value for next available attribute
+    let mut current_handle: u16 = 1;
+
     for (i, service) in services.iter().enumerate() {
         let uuid_bytes = uuid_to_bytes(&service.uuid);
         let uuid_ident = format_ident!("_uuid{}", i);
@@ -238,7 +320,16 @@ pub fn gatt(input: TokenStream) -> TokenStream {
             let gen_attr_att_data_ident = format_ident!("_gen_attr_att_data{}{}", i, j);
 
             decls.push(
-                if characteristic.read.is_some() || characteristic.write.is_some() {
+                if (characteristic.read.is_some() || characteristic.write.is_some()) as u32
+                    + characteristic.value.is_some() as u32
+                    + characteristic.data.is_some() as u32
+                    > 1
+                {
+                    return quote! { compile_error!(
+                        "Characteristic data fields duplicated: 'read'/'write' or 'value' or 'data'"
+                    ); }
+                    .into();
+                } else if characteristic.read.is_some() || characteristic.write.is_some() {
                     let rfunction = if let Some(name) = &characteristic.read {
                         let fname = format_ident!("{}", name);
                         quote!(&mut #fname)
@@ -256,14 +347,15 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     quote!(let mut #gen_attr_att_data_ident = (#rfunction, #wfunction);)
                 } else if let Some(name) = &characteristic.value {
                     let vname = format_ident!("{}", name);
-                    quote!(let mut #gen_attr_att_data_ident = (#vname,);)
+                    quote!(let mut #gen_attr_att_data_ident = #vname;)
                 } else if let Some(name) = &characteristic.data {
                     let dname = format_ident!("{}", name);
-                    quote!(let mut #gen_attr_att_data_ident = (#dname,);)
+                    quote!(let mut #gen_attr_att_data_ident = #dname;)
                 } else {
-                    quote!(compile_error!(
+                    return quote! { compile_error!(
                         "Characteristic data fields missing: 'read'/'write' nor 'value' nor 'data'"
-                    ))
+                    ); }
+                    .into();
                 },
             );
 
@@ -278,29 +370,17 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 quote!(let #gen_attr_ident = Attribute::new(#gen_attr_att_uuid, &mut #gen_attr_att_data_ident);)
             );
             attribs.push(quote!(#gen_attr_ident));
-            current_handle += 1;
 
-            if characteristic.description.is_some() {
-                let mut char_user_description_data: Vec<u8> = Vec::new();
-                char_user_description_data
-                    .extend(characteristic.description.as_ref().unwrap().bytes());
-                let char_user_description_data_ident =
-                    format_ident!("_char_user_description_data{}{}", i, j);
-                decls.push(quote!(let #char_user_description_data_ident = [ #(#char_user_description_data),* ] ;));
-
-                let char_user_description_data_attr =
-                    format_ident!("_char_user_description_data_attr{}{}", i, j);
-                decls.push(quote!(let mut #char_user_description_data_attr = &#char_user_description_data_ident;));
-
-                let char_user_description_data_attribute =
-                    format_ident!("_char_user_description_data_attribute{}{}", i, j);
-                decls.push(
-                    quote!(let #char_user_description_data_attribute = Attribute::new(Uuid::Uuid16(0x2901), &mut #char_user_description_data_attr);)
-                );
-                attribs.push(quote!(#char_user_description_data_attribute));
-                current_handle += 1;
+            if let Some(name) = &characteristic.name {
+                let char_handle_ident = format_ident!("{}_handle", name);
+                post.push(quote!(let #char_handle_ident = #current_handle;));
             }
 
+            current_handle += 1;
+
+            // If "Client Characteristic Configuration" Descriptor is present,
+            // It must always be the first one after the characteristic attribute.
+            // This assumption arises in `../../bleps/src/async_attribute_server.rs`
             if characteristic.notify {
                 let mut ccd_data: Vec<u8> = Vec::new();
                 ccd_data.extend(&[0u8, 0u8]);
@@ -352,32 +432,88 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     quote!(let #char_ccd_data_attribute = Attribute::new(Uuid::Uuid16(0x2902), &mut #char_ccd_data_attr);)
                 );
                 attribs.push(quote!(#char_ccd_data_attribute));
+
+                if let Some(name) = &characteristic.name {
+                    let char_notify_enable_handle_ident =
+                        format_ident!("{}_notify_enable_handle", name);
+                    post.push(quote!(let #char_notify_enable_handle_ident = #current_handle;));
+                }
+
                 current_handle += 1;
             }
 
-            if let Some(name) = &characteristic.name {
-                let char_data_handle = (current_handle
-                    - if characteristic.notify { 1 } else { 0 }
-                    - if characteristic.description.is_some() {
-                        1
+            if characteristic.description.is_some() {
+                let mut char_user_description_data: Vec<u8> = Vec::new();
+                char_user_description_data
+                    .extend(characteristic.description.as_ref().unwrap().bytes());
+                let char_user_description_data_ident =
+                    format_ident!("_char_user_description_data{}{}", i, j);
+                decls.push(quote!(let #char_user_description_data_ident = [ #(#char_user_description_data),* ] ;));
+
+                let char_user_description_data_attr =
+                    format_ident!("_char_user_description_data_attr{}{}", i, j);
+                decls.push(quote!(let mut #char_user_description_data_attr = &#char_user_description_data_ident;));
+
+                let char_user_description_data_attribute =
+                    format_ident!("_char_user_description_data_attribute{}{}", i, j);
+                decls.push(
+                    quote!(let #char_user_description_data_attribute = Attribute::new(Uuid::Uuid16(0x2901), &mut #char_user_description_data_attr);)
+                );
+                attribs.push(quote!(#char_user_description_data_attribute));
+                current_handle += 1;
+            }
+
+            for (k, descriptor) in characteristic.descriptors.iter().enumerate() {
+                let uuid_bytes = uuid_to_bytes(&descriptor.uuid);
+                let descriptor_uuid = if uuid_bytes.len() == 2 {
+                    quote!(Uuid::Uuid16(u16::from_le_bytes([ #(#uuid_bytes),* ])))
+                } else {
+                    quote!(Uuid::Uuid128([ #(#uuid_bytes),* ]))
+                };
+
+                let char_desc_attribute = format_ident!("_char_desc_attr{}{}{}", i, j, k);
+                let char_desc_data_ident = format_ident!("_char_desc_data{}{}{}", i, j, k);
+
+                if (descriptor.read.is_some() || descriptor.write.is_some()) as u32
+                    + descriptor.value.is_some() as u32
+                    > 1
+                {
+                    return quote! { compile_error!(
+                        "Descriptor data fields duplicated: 'read'/'write' or 'value'"
+                    ); }
+                    .into();
+                } else if descriptor.read.is_some() || descriptor.write.is_some() {
+                    let rfunction = if let Some(name) = &descriptor.read {
+                        let fname = format_ident!("{}", name);
+                        quote!(&mut #fname)
                     } else {
-                        0
-                    }) as u16;
+                        quote!(())
+                    };
 
-                let char_handle_name = format_ident!("{}_handle", name);
-                post.push(quote!(let #char_handle_name = #char_data_handle;));
+                    let wfunction = if let Some(name) = &descriptor.write {
+                        let fname = format_ident!("{}", name);
+                        quote!(&mut #fname)
+                    } else {
+                        quote!(())
+                    };
 
-                if characteristic.notify {
-                    let char_notify_enable_handle_name =
-                        format_ident!("{}_notify_enable_handle", name);
-                    let handle = char_data_handle
-                        + if characteristic.description.is_some() {
-                            1
-                        } else {
-                            0
-                        };
-                    post.push(quote!(let #char_notify_enable_handle_name = #handle;));
+                    decls.push(quote!(let mut #char_desc_data_ident = (#rfunction, #wfunction);));
+                } else if let Some(name) = &descriptor.value {
+                    let vname = format_ident!("{}", name);
+                    decls.push(quote!(let mut #char_desc_data_ident = #vname;));
+                } else {
+                    return quote! { compile_error!(
+                        "Descriptor data fields missing: 'read'/'write' nor 'value'"
+                    ); }
+                    .into();
                 }
+
+                decls.push(
+                    quote!(let #char_desc_attribute = Attribute::new(#descriptor_uuid, &mut #char_desc_data_ident);)
+                );
+                attribs.push(quote!(#char_desc_attribute));
+
+                current_handle += 1;
             }
         }
     }
@@ -437,4 +573,13 @@ struct Characteristic {
     description: Option<String>,
     notify: bool,
     name: Option<String>,
+    descriptors: Vec<Descriptor>,
+}
+
+#[derive(Debug, Default)]
+struct Descriptor {
+    uuid: String,
+    read: Option<String>,
+    write: Option<String>,
+    value: Option<String>,
 }

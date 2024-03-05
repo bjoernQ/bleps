@@ -95,7 +95,7 @@ bleps_dedup::dedup! {
             offset: u16,
             buffer: &mut [u8],
         ) -> Option<usize> {
-            let att = &mut self.attributes[handle as usize];
+            let att = &mut self.attributes[(handle as usize) - 1];
 
             if att.data.readable() {
                 att.data.read(offset as usize, buffer).ok()

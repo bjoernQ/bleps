@@ -200,7 +200,7 @@ impl Att {
                 let group_type = if payload.len() == 6 {
                     Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
                 } else if payload.len() == 20 {
-                    let uuid = payload[4..21]
+                    let uuid = payload[4..20]
                         .try_into()
                         .map_err(|_| AttDecodeError::Other)?;
                     Uuid::Uuid128(uuid)
@@ -221,7 +221,7 @@ impl Att {
                 let attribute_type = if payload.len() == 6 {
                     Uuid::Uuid16((payload[4] as u16) + ((payload[5] as u16) << 8))
                 } else if payload.len() == 20 {
-                    let uuid = payload[4..21]
+                    let uuid = payload[4..20]
                         .try_into()
                         .map_err(|_| AttDecodeError::Other)?;
                     Uuid::Uuid128(uuid)
