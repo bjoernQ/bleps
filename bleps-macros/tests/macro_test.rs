@@ -130,3 +130,30 @@ fn test5() {
 
     println!("{:x?}", gatt_attributes);
 }
+
+#[test]
+fn test6() {
+    let mut my_read_function = |_offset: usize, data: &mut [u8]| {
+        data[..5].copy_from_slice(&b"Ciao!"[..]);
+        5
+    };
+    let mut my_write_function = |_offset, data: &[u8]| {
+        println!("{:?}", data);
+    };
+    let mut my_notify = |enabled: bool| {
+        println!("enabled = {enabled}");
+    };
+
+    gatt!([service {
+        uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+        characteristics: [characteristic {
+            uuid: "9e7312e0-2354-11eb-9f10-fbc30a62cf38",
+            notify: true,
+            notify_cb: my_notify,
+            read: my_read_function,
+            write: my_write_function,
+        },],
+    },]);
+
+    println!("{:x?}", gatt_attributes);
+}
