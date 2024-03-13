@@ -641,7 +641,7 @@ fn attribute_server_discover_two_services() {
     let mut char_att_data = &char_data;
     let char = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data);
 
-    let mut custom_char_att_data = (&mut rf1, &mut wf1);
+    let mut custom_char_att_data = (&mut rf1, &mut wf1, ());
     let custom_char_att_data_attr = Attribute::new(
         Uuid::Uuid128([
             0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,
@@ -681,7 +681,7 @@ fn attribute_server_discover_two_services() {
     let mut char_att_data2 = &char_data2;
     let char2 = Attribute::new(CHARACTERISTIC_UUID16, &mut char_att_data2);
 
-    let mut custom_char_att_data2 = (&mut rf2, &mut wf2);
+    let mut custom_char_att_data2 = (&mut rf2, &mut wf2, ());
     let custom_char_att_data_attr2 = Attribute::new(
         Uuid::Uuid128([
             0xC9, 0x15, 0x15, 0x96, 0x54, 0x56, 0x64, 0xB3, 0x38, 0x45, 0x26, 0x5D, 0xF1, 0x62,

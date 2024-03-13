@@ -21,6 +21,10 @@ pub trait AttData {
     fn write(&mut self, _offset: usize, _data: &[u8]) -> Result<(), AttErrorCode> {
         Ok(())
     }
+
+    fn enable_notification(&mut self, _enabled: bool) -> Result<(), AttErrorCode> {
+        Ok(())
+    }
 }
 
 impl<'a, const N: usize> AttData for &'a [u8; N] {
@@ -193,7 +197,7 @@ impl<T> IntoResult<T> for Result<T, AttErrorCode> {
     }
 }
 
-impl<T, R> AttData for (R, ())
+impl<T, R> AttData for (R, (), ())
 where
     T: IntoResult<usize>,
     R: FnMut(usize, &mut [u8]) -> T,
@@ -207,7 +211,7 @@ where
     }
 }
 
-impl<U, W> AttData for ((), W)
+impl<U, W> AttData for ((), W, ())
 where
     U: IntoResult<()>,
     W: FnMut(usize, &[u8]) -> U,
@@ -221,7 +225,7 @@ where
     }
 }
 
-impl<T, U, R, W> AttData for (R, W)
+impl<T, U, R, W> AttData for (R, W, ())
 where
     T: IntoResult<usize>,
     U: IntoResult<()>,
@@ -242,6 +246,74 @@ where
 
     fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
         self.1(offset, data).into_result()
+    }
+}
+
+impl<T, U, R, N> AttData for (R, (), N)
+where
+    T: IntoResult<usize>,
+    U: IntoResult<()>,
+    R: FnMut(usize, &mut [u8]) -> T,
+    N: FnMut(bool) -> U,
+{
+    fn readable(&self) -> bool {
+        true
+    }
+
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
+        self.0(offset, data).into_result()
+    }
+
+    fn enable_notification(&mut self, enabled: bool) -> Result<(), AttErrorCode> {
+        self.2(enabled).into_result()
+    }
+}
+
+impl<T, U, R, W, N> AttData for (R, W, N)
+where
+    T: IntoResult<usize>,
+    U: IntoResult<()>,
+    R: FnMut(usize, &mut [u8]) -> T,
+    W: FnMut(usize, &[u8]) -> U,
+    N: FnMut(bool) -> U,
+{
+    fn readable(&self) -> bool {
+        true
+    }
+
+    fn read(&mut self, offset: usize, data: &mut [u8]) -> Result<usize, AttErrorCode> {
+        self.0(offset, data).into_result()
+    }
+
+    fn writable(&self) -> bool {
+        true
+    }
+
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
+        self.1(offset, data).into_result()
+    }
+
+    fn enable_notification(&mut self, enabled: bool) -> Result<(), AttErrorCode> {
+        self.2(enabled).into_result()
+    }
+}
+
+impl<U, W, N> AttData for ((), W, N)
+where
+    U: IntoResult<()>,
+    W: FnMut(usize, &[u8]) -> U,
+    N: FnMut(bool) -> U,
+{
+    fn writable(&self) -> bool {
+        true
+    }
+
+    fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), AttErrorCode> {
+        self.1(offset, data).into_result()
+    }
+
+    fn enable_notification(&mut self, enabled: bool) -> Result<(), AttErrorCode> {
+        self.2(enabled).into_result()
     }
 }
 

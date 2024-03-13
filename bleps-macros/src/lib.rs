@@ -153,6 +153,14 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         return quote!{ compile_error!("Unexpected"); }.into();
                                                     }
                                                 }
+                                                "notify_cb" => {
+                                                    if let Expr::Path(p) = field.expr {
+                                                        let name = path_to_string(p.path);
+                                                        charact.notify_cb = Some(name);
+                                                    } else {
+                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                    }
+                                                }
                                                 "name" => {
                                                     if let Expr::Lit(value) = field.expr {
                                                         if let Lit::Str(s) = value.lit {
@@ -344,7 +352,14 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                         quote!(())
                     };
 
-                    quote!(let mut #gen_attr_att_data_ident = (#rfunction, #wfunction);)
+                    let nfunction = if let Some(name) = &characteristic.notify_cb {
+                        let fname = format_ident!("{}", name);
+                        quote!(&mut #fname)
+                    } else {
+                        quote!(())
+                    };
+
+                    quote!(let mut #gen_attr_att_data_ident = (#rfunction, #wfunction, #nfunction);)
                 } else if let Some(name) = &characteristic.value {
                     let vname = format_ident!("{}", name);
                     quote!(let mut #gen_attr_att_data_ident = #vname;)
@@ -391,10 +406,11 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                 let rfunction = format_ident!("_attr_read{}", current_handle);
                 let wfunction = format_ident!("_attr_write{}", current_handle);
                 decls.push(
-                    quote!(let mut #char_ccd_data_attr = (&mut #rfunction, &mut #wfunction);),
+                    quote!(let mut #char_ccd_data_attr = (&mut #rfunction, &mut #wfunction, ());),
                 );
 
                 let backing_data = format_ident!("_attr_data{}", current_handle);
+
                 pre.push(quote!(
                     #[allow(non_upper_case_globals)]
                     static mut #backing_data: [u8; 2] = [0u8; 2];
@@ -497,7 +513,9 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                         quote!(())
                     };
 
-                    decls.push(quote!(let mut #char_desc_data_ident = (#rfunction, #wfunction);));
+                    decls.push(
+                        quote!(let mut #char_desc_data_ident = (#rfunction, #wfunction, ());),
+                    );
                 } else if let Some(name) = &descriptor.value {
                     let vname = format_ident!("{}", name);
                     decls.push(quote!(let mut #char_desc_data_ident = #vname;));
@@ -572,6 +590,7 @@ struct Characteristic {
     write: Option<String>,
     description: Option<String>,
     notify: bool,
+    notify_cb: Option<String>,
     name: Option<String>,
     descriptors: Vec<Descriptor>,
 }

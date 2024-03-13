@@ -396,31 +396,39 @@ bleps_dedup::dedup! {
             self.write_att(src_handle, response).await;
         }
 
-        async fn handle_write_cmd(&mut self, _src_handle: u16, handle: u16, data: Data) {
-            for att in self.attributes.iter_mut() {
-                if att.handle == handle {
-                    if att.data.writable() {
-                        // Write commands can't respond with an error.
-                        let err = att.data.write(0, data.as_slice());
-                        if let Err(e) = err {
-                            log::debug!("write error: {e:?}");
-                        }
-                    }
-                    break;
-                }
+        fn handle_write(&mut self, handle: u16, data: Data) -> Result<(), AttErrorCode> {
+            let Some((index, att)) = self.attributes.iter_mut().enumerate().find(|(_, att)| att.handle == handle) else {
+                return Err(AttErrorCode::InvalidHandle);
+            };
+            if !att.data.writable() {
+                return Err(AttErrorCode::WriteNotPermitted);
             }
+
+            let err = att.data.write(0, data.as_slice());
+            if let Err(e) = err {
+                log::debug!("write error: {e:?}");
+                return Err(e);
+            }
+
+            // If this is a Client Characteristic Configuration descriptor, notify the parent of a change
+            // otherwise return immediatly.
+            if att.uuid != Uuid::Uuid16(0x2902) {
+                return Ok(());
+            }
+
+            // Here we make the same assumption made in async_atribute_server that the CCCD directly follows
+            // the charactaristic attribute.
+            let parrent_att = &mut self.attributes[index-1];
+            parrent_att.data.enable_notification(data.as_slice()[0] & 0x1 == 0x1)
+        }
+
+        async fn handle_write_cmd(&mut self, _src_handle: u16, handle: u16, data: Data) {
+            // Write commands can't respond with an error.
+            let _ = self.handle_write(handle, data);
         }
 
         async fn handle_write_req(&mut self, src_handle: u16, handle: u16, data: Data) {
-            let mut err = Err(AttErrorCode::AttributeNotFound);
-            for att in self.attributes.iter_mut() {
-                if att.handle == handle {
-                    if att.data.writable() {
-                        err = att.data.write(0, data.as_slice());
-                    }
-                    break;
-                }
-            }
+            let err = self.handle_write(handle, data);
 
             let response = match err {
                 Ok(()) => Data::new_att_write_response(),
