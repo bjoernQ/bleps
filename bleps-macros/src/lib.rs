@@ -232,7 +232,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                             }
                                                                         }
                                                                         _ => {
-                                                                            return quote! { compile_error!("Unexpected descriptor field '{}'", name); }
+                                                                            return quote! { compile_error!(concat!("Unexpected descriptor field '", #name, "'")); }
                                                                                 .into()
                                                                         }
                                                                     }
@@ -245,7 +245,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                     }
                                                 }
                                                 _ => {
-                                                    return quote! { compile_error!("Unexpected characteristic field '{}'", name); }
+                                                    return quote! { compile_error!(concat!("Unexpected characteristic field '", #name, "'")); }
                                                         .into()
                                                 }
                                             }
@@ -260,7 +260,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                 return quote! { compile_error!("Service field 'characteristics' must be an array"); }.into();
                             }
                         }
-                        _ => return quote! { compile_error!("Unexpected service field '{}'", name); }.into(),
+                        _ => return quote! { compile_error!(concat!("Unexpected service field '", #name, "'")); }.into(),
                     }
                 }
 
