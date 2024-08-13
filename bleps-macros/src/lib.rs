@@ -43,9 +43,9 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
     for elem in ast.elems {
         match elem {
-            syn::Expr::Struct(s) => {
+            Expr::Struct(s) => {
                 if path_to_string(s.path) != "service" {
-                    return quote! { compile_error!("Unexpected"); }.into();
+                    return quote! { compile_error!("Service definition must be given as 'service { ... }'"); }.into();
                 }
 
                 let mut service = Service::default();
@@ -54,7 +54,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                     let name = if let Member::Named(name) = field.member {
                         name.to_string()
                     } else {
-                        return quote! { compile_error!("Unexpected"); }.into();
+                        return quote! { compile_error!("Service has an unnamed field"); }.into();
                     };
 
                     match name.as_str() {
@@ -63,10 +63,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                 if let Lit::Str(s) = value.lit {
                                     service.uuid = s.value();
                                 } else {
-                                    return quote! { compile_error!("Unexpected"); }.into();
+                                    return quote! { compile_error!("Service field 'uuid' must be a string literal"); }.into();
                                 }
                             } else {
-                                return quote! { compile_error!("Unexpected"); }.into();
+                                return quote! { compile_error!("Service field 'uuid' must be a string literal"); }.into();
                             }
                         }
                         "characteristics" => {
@@ -74,7 +74,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                 for characteristic in characteristics.elems {
                                     if let Expr::Struct(s) = characteristic {
                                         if path_to_string(s.path) != "characteristic" {
-                                            return quote! { compile_error!("Unexpected"); }.into();
+                                            return quote! { compile_error!("Characteristic definition must be given as 'characteristic { ... }'"); }.into();
                                         }
 
                                         let mut charact = Characteristic::default();
@@ -83,7 +83,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                             let name = if let Member::Named(name) = field.member {
                                                 name.to_string()
                                             } else {
-                                                return quote! { compile_error!("Unexpected"); }
+                                                return quote! { compile_error!("Characteristic has an unnamed field"); }
                                                     .into();
                                             };
 
@@ -93,10 +93,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         if let Lit::Str(s) = value.lit {
                                                             charact.uuid = s.value();
                                                         } else {
-                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                            return quote!{ compile_error!("Characteristic field 'uuid' must be a string literal"); }.into();
                                                         }
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'uuid' must be a string literal"); }.into();
                                                     }
                                                 }
                                                 "data" => {
@@ -104,7 +104,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         let name = path_to_string(p.path);
                                                         charact.data = Some(name);
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'data' must be a path"); }.into();
                                                     }
                                                 }
                                                 "value" => {
@@ -112,7 +112,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         let name = path_to_string(p.path);
                                                         charact.value = Some(name);
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'value' must be a path"); }.into();
                                                     }
                                                 }
                                                 "read" => {
@@ -120,7 +120,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         let name = path_to_string(p.path);
                                                         charact.read = Some(name);
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'read' must be a path"); }.into();
                                                     }
                                                 }
                                                 "write" => {
@@ -128,7 +128,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         let name = path_to_string(p.path);
                                                         charact.write = Some(name);
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'write' must be a path"); }.into();
                                                     }
                                                 }
                                                 "description" => {
@@ -136,10 +136,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         if let Lit::Str(s) = value.lit {
                                                             charact.description = Some(s.value());
                                                         } else {
-                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                            return quote!{ compile_error!("Characteristic field 'description' must be a string literal"); }.into();
                                                         }
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'description' must be a string literal"); }.into();
                                                     }
                                                 }
                                                 "notify" => {
@@ -147,10 +147,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         if let Lit::Bool(s) = value.lit {
                                                             charact.notify = s.value();
                                                         } else {
-                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                            return quote!{ compile_error!("Characteristic field 'notify' must be a boolean"); }.into();
                                                         }
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'notify' must be a boolean"); }.into();
                                                     }
                                                 }
                                                 "notify_cb" => {
@@ -158,7 +158,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         let name = path_to_string(p.path);
                                                         charact.notify_cb = Some(name);
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'notify_cb' must be a path"); }.into();
                                                     }
                                                 }
                                                 "name" => {
@@ -166,10 +166,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                         if let Lit::Str(s) = value.lit {
                                                             charact.name = Some(s.value());
                                                         } else {
-                                                            return quote!{ compile_error!("Unexpected"); }.into();
+                                                            return quote!{ compile_error!("Characteristic field 'name' must be a string literal"); }.into();
                                                         }
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'name' must be a string literal"); }.into();
                                                     }
                                                 }
                                                 "descriptors" => {
@@ -179,7 +179,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                 if path_to_string(s.path)
                                                                     != "descriptor"
                                                                 {
-                                                                    return quote! { compile_error!("Unexpected"); }.into();
+                                                                    return quote! { compile_error!("Descriptor definition must be given as 'descriptor { ... }'"); }.into();
                                                                 }
 
                                                                 let mut desc =
@@ -192,7 +192,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                         {
                                                                             name.to_string()
                                                                         } else {
-                                                                            return quote! { compile_error!("Unexpected"); }.into();
+                                                                            return quote! { compile_error!("Descriptor has an unnamed field"); }.into();
                                                                         };
 
                                                                     match name.as_str() {
@@ -201,10 +201,10 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                                 if let Lit::Str(s) = value.lit {
                                                                                     desc.uuid = s.value();
                                                                                 } else {
-                                                                                    return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                    return quote!{ compile_error!("Descriptor field 'uuid' must be a string literal"); }.into();
                                                                                 }
                                                                             } else {
-                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                return quote!{ compile_error!("Descriptor field 'uuid' must be a string literal"); }.into();
                                                                             }
                                                                         }
                                                                         "read" => {
@@ -212,7 +212,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                                 let name = path_to_string(p.path);
                                                                                 desc.read = Some(name);
                                                                             } else {
-                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                return quote!{ compile_error!("Descriptor field 'read' must be a path"); }.into();
                                                                             }
                                                                         }
                                                                         "write" => {
@@ -220,7 +220,7 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                                 let name = path_to_string(p.path);
                                                                                 desc.write = Some(name);
                                                                             } else {
-                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                return quote!{ compile_error!("Descriptor field 'write' must be a path"); }.into();
                                                                             }
                                                                         }
                                                                         "value" => {
@@ -228,11 +228,11 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                                                 let name = path_to_string(p.path);
                                                                                 desc.value = Some(name);
                                                                             } else {
-                                                                                return quote!{ compile_error!("Unexpected"); }.into();
+                                                                                return quote!{ compile_error!("Descriptor field 'value' must be a path"); }.into();
                                                                             }
                                                                         }
                                                                         _ => {
-                                                                            return quote! { compile_error!("Unexpected"); }
+                                                                            return quote! { compile_error!(concat!("Unexpected descriptor field '", #name, "'")); }
                                                                                 .into()
                                                                         }
                                                                     }
@@ -241,11 +241,11 @@ pub fn gatt(input: TokenStream) -> TokenStream {
                                                             }
                                                         }
                                                     } else {
-                                                        return quote!{ compile_error!("Unexpected"); }.into();
+                                                        return quote!{ compile_error!("Characteristic field 'descriptors' must be an array"); }.into();
                                                     }
                                                 }
                                                 _ => {
-                                                    return quote! { compile_error!("Unexpected"); }
+                                                    return quote! { compile_error!(concat!("Unexpected characteristic field '", #name, "'")); }
                                                         .into()
                                                 }
                                             }
@@ -253,20 +253,20 @@ pub fn gatt(input: TokenStream) -> TokenStream {
 
                                         service.characteristics.push(charact);
                                     } else {
-                                        return quote! { compile_error!("Unexpected"); }.into();
+                                        return quote! { compile_error!("Characteristic definition must be given as 'characteristic { ... }'"); }.into();
                                     }
                                 }
                             } else {
-                                return quote! { compile_error!("Unexpected"); }.into();
+                                return quote! { compile_error!("Service field 'characteristics' must be an array"); }.into();
                             }
                         }
-                        _ => return quote! { compile_error!("Unexpected"); }.into(),
+                        _ => return quote! { compile_error!(concat!("Unexpected service field '", #name, "'")); }.into(),
                     }
                 }
 
                 services.push(service);
             }
-            _ => return quote! { compile_error!("Unexpected"); }.into(),
+            _ => return quote! { compile_error!("Service definition must be given as 'service { ... }'"); }.into(),
         };
     }
 
