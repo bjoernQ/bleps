@@ -615,6 +615,17 @@ pub mod asynch {
                 .check_command_completed()
         }
 
+        pub async fn cmd_set_le_scan_rsp_data(&mut self, data: Data) -> Result<EventType, Error>
+        where
+            Self: Sized,
+        {
+            self.write_bytes(Command::LeSetScanRspData { data }.encode().as_slice())
+                .await;
+            self.wait_for_command_complete(LE_OGF, SET_SCAN_RSP_DATA_OCF)
+                .await?
+                .check_command_completed()
+        }
+
         pub async fn cmd_set_le_advertise_enable(
             &mut self,
             enable: bool,
