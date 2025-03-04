@@ -95,8 +95,8 @@ impl<'a> Command<'a> {
                     .write_into(&mut data[1..]);
 
                 let mut adv_params = Data::new(&[]);
-                adv_params.append(&params.advertising_interval_min.to_be_bytes());
-                adv_params.append(&params.advertising_interval_max.to_be_bytes());
+                adv_params.append(&params.advertising_interval_min.to_le_bytes());
+                adv_params.append(&params.advertising_interval_max.to_le_bytes());
                 adv_params.append(&[params.advertising_type as u8]);
                 adv_params.append(&[params.own_address_type as u8]);
                 adv_params.append(&[params.peer_address_type as u8]);
