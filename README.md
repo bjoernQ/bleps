@@ -6,6 +6,9 @@ To use it you need an implementation of embedded-io offering communication with 
 
 The goal is just to have _something_ that works for testing,demos and personal projects - no intentions to make this pass certification tests.
 
+> [!TIP]
+> If your intend to use async, please consider using [Trouble](https://github.com/embassy-rs/trouble) instead
+
 ## License
 
 Licensed under either of
